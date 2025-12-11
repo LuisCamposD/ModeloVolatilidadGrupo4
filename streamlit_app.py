@@ -301,6 +301,9 @@ elif pagina == "EDA":
 elif pagina == "Modelo y predicciones":
     st.title("Modelo de Volatilidad y Predicciones")
 
+    # =========================
+    # 5.1 Performance del modelo
+    # =========================
     st.subheader("Performance del modelo en el conjunto de prueba")
 
     # Reconstruir X/y igual que en el Colab
@@ -314,7 +317,6 @@ elif pagina == "Modelo y predicciones":
     y_test = y.iloc[train_size:]
 
     X_test_imp = imputer.transform(X_test)
-
     y_pred = modelo.predict(X_test_imp)
 
     mae = mean_absolute_error(y_test, y_pred)
@@ -336,8 +338,11 @@ elif pagina == "Modelo y predicciones":
         plt.tight_layout()
         st.pyplot(fig)
 
+    # =========================
+    # 5.2 Simulador 1 periodo
+    # =========================
     st.markdown("---")
-    st.subheader("Simulador de predicciones")
+    st.subheader("Simulador de predicciones (1 período)")
 
     st.write("""
     Ajusta las variables explicativas y el modelo estimará el **rendimiento logarítmico** del TC.
@@ -346,7 +351,7 @@ elif pagina == "Modelo y predicciones":
 
     desc = df_mod[selected_vars].describe()
 
-    with st.form("form_pred"):
+    with st.form("form_pred_un_paso"):
         entrada = {}
         for col in selected_vars:
             min_val = float(desc.loc["min", col])
@@ -357,7 +362,7 @@ elif pagina == "Modelo y predicciones":
                 col,
                 min_value=min_val,
                 max_value=max_val,
-                value=mean_val
+                value=mean_val,
             )
 
         enviado = st.form_submit_button("Calcular predicción")
@@ -376,3 +381,122 @@ elif pagina == "Modelo y predicciones":
         st.write(f"Tipo de cambio estimado para el siguiente período: **{tc_esperado:.4f}**")
 
         st.success("Predicción calculada con éxito.")
+
+    # =========================
+    # 5.3 Predicción multi-mes (como en el Colab)
+    # =========================
+    st.markdown("---")
+    st.subheader("Predicción de varios meses hacia adelante")
+
+    st.write("""
+    Aquí proyectamos el tipo de cambio para varios meses hacia adelante, 
+    usando como base el último valor observado y manteniendo constantes 
+    las demás variables explicativas (como en el Colab).
+    """)
+
+    # Diccionario de meses para convertir nombres a números
+    mes_dict = {
+        "Ene": 1, "Feb": 2, "Mar": 3, "Abr": 4, "May": 5, "Jun": 6,
+        "Jul": 7, "Ago": 8, "Sep": 9, "Oct": 10, "Nov": 11, "Dic": 12,
+    }
+    meses_nombres = list(mes_dict.keys())
+
+    # Tomamos el último registro ordenado por fecha
+    df_ordenado = df.sort_values("fecha").reset_index(drop=True)
+    ultimo_anio = int(df_ordenado["anio"].iloc[-1])
+    ultimo_mes_nombre = df_ordenado["mes"].iloc[-1]
+    idx_mes_default = meses_nombres.index(ultimo_mes_nombre)
+
+    col_a, col_b, col_c = st.columns(3)
+    with col_a:
+        anio_input = st.number_input(
+            "Año de inicio de la predicción",
+            min_value=ultimo_anio,
+            max_value=ultimo_anio + 10,
+            value=ultimo_anio,
+            step=1,
+        )
+    with col_b:
+        mes_nombre = st.selectbox(
+            "Mes de inicio",
+            options=meses_nombres,
+            index=idx_mes_default,
+        )
+        mes_inicio = mes_dict[mes_nombre]
+    with col_c:
+        num_meses = st.slider("Número de meses a predecir", 1, 24, 5)
+
+    if st.button("Calcular predicción multi-mes"):
+        # Último registro de variables explicativas y TC
+        ultimo_X = df_mod[selected_vars].iloc[-1].copy()
+        ultimo_tc = df_mod["TC"].iloc[-1]
+
+        # Generar lista de (anio, mes_num) futuros
+        meses_futuro = []
+        mes_actual = mes_inicio
+        anio_actual = int(anio_input)
+
+        for _ in range(num_meses):
+            meses_futuro.append((anio_actual, mes_actual))
+            mes_actual += 1
+            if mes_actual > 12:
+                mes_actual = 1
+                anio_actual += 1
+
+        df_futuro = pd.DataFrame(meses_futuro, columns=["anio", "mes_num"])
+
+        # Construir las features futuras:
+        # - 'anio' toma el año futuro
+        # - el resto de variables se mantiene igual al último registro observado
+        for col in selected_vars:
+            if col == "anio":
+                df_futuro[col] = df_futuro["anio"]
+            else:
+                df_futuro[col] = ultimo_X[col]
+
+        # Imputar y predecir rendimientos logarítmicos
+        X_fut_imp = imputer.transform(df_futuro[selected_vars])
+        rendimientos_pred = modelo.predict(X_fut_imp)
+
+        # Reconstrucción del tipo de cambio mes a mes
+        tc_pred = []
+        tc_actual = ultimo_tc
+        for r in rendimientos_pred:
+            tc_actual = tc_actual * np.exp(r)
+            tc_pred.append(tc_actual)
+
+        df_futuro["TC_predicho"] = tc_pred
+
+        # Mapear número de mes a nombre
+        mes_dict_inv = {v: k for k, v in mes_dict.items()}
+        df_futuro["mes"] = df_futuro["mes_num"].map(mes_dict_inv)
+
+        # Mostrar tabla de predicciones
+        st.write("### Predicciones futuras")
+        st.dataframe(df_futuro[["anio", "mes", "TC_predicho"]])
+
+        # Gráfico histórico + predicciones (similar al Colab)
+        fig, ax = plt.subplots(figsize=(10, 4))
+
+        # Serie histórica (índices 0..N-1)
+        x_hist = np.arange(len(df_ordenado))
+        ax.plot(x_hist, df_ordenado["TC"], label="TC real (histórico)")
+
+        # Serie futura (N..N+num_meses-1)
+        x_fut = np.arange(len(df_ordenado), len(df_ordenado) + num_meses)
+        ax.plot(
+            x_fut,
+            df_futuro["TC_predicho"],
+            label=f"TC predicho ({num_meses} meses desde {mes_nombre}/{int(anio_input)})",
+            marker="o",
+            color="red",
+        )
+
+        ax.set_title(
+            f"Predicción del Tipo de Cambio - {num_meses} meses desde {mes_nombre}/{int(anio_input)}"
+        )
+        ax.set_xlabel("Meses")
+        ax.set_ylabel("Tipo de cambio (S/ por US$)")
+        ax.legend()
+        plt.tight_layout()
+        st.pyplot(fig)

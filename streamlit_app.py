@@ -119,42 +119,6 @@ def cargar_recursos():
     # Cargar datos limpios
     df = pd.read_csv("datos_tc_limpios.csv")
 
-    # -------- 1) Detectar la columna de tipo de cambio --------
-    posibles_tc = [
-        "TC",
-        "tc",
-        "TC_venta",
-        "tc_venta",
-        "Tipo de cambio - TC Sistema bancario SBS (S/ por US$) - Venta",
-        "Tipo de cambio - TC Sistema bancario SBS (S/ por US$) - Venta ",
-        "Tipo_de_cambio",
-    ]
-
-    tc_col = None
-    # Buscar por nombres exactos
-    for col in posibles_tc:
-        if col in df.columns:
-            tc_col = col
-            break
-
-    # Si no lo encontró, buscar por texto aproximado
-    if tc_col is None:
-        for col in df.columns:
-            nombre = col.lower()
-            if "tipo de cambio" in nombre or nombre == "tc":
-                tc_col = col
-                break
-
-    if tc_col is None:
-        raise KeyError(
-            f"No se encontró columna de Tipo de Cambio en el CSV. "
-            f"Columnas disponibles: {list(df.columns)}"
-        )
-
-    # Crear alias estándar 'TC' para el resto del código
-    if tc_col != "TC":
-        df["TC"] = df[tc_col]
-
     # -------- 2) Crear columna fecha --------
     if "fecha" not in df.columns:
         if "anio" in df.columns and "mes" in df.columns:

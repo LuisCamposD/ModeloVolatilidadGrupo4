@@ -169,7 +169,7 @@ def cargar_recursos():
     df = df.sort_values("fecha").reset_index(drop=True)
 
     # ========== 3) Rendimientos logarítmicos ==========
-        df_mod = pd.read_csv("datos_procesados.csv")
+    df_mod = pd.read_csv("datos_procesados.csv")
 
     if "Rendimientos_log" in df_mod.columns:
         # Si ya lo calculaste en el Colab y lo guardaste en el CSV

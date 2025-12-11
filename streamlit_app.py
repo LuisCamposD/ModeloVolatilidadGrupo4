@@ -166,6 +166,17 @@ if pagina == "Inicio y línea de tiempo":
     """)
 
     st.subheader("Problemática")
+     st.write("""
+    Para áreas de **logística, finanzas y planificación**, la volatilidad del tipo de cambio es clave:
+    impacta directamente en el costo de importaciones, contratos en dólares y cobertura de riesgos.
+
+    El objetivo es:
+    - **Cuantificar** cómo se mueve el TC de un mes a otro (rendimientos logarítmicos).
+    - **Identificar variables explicativas** relevantes mediante selección por **Forward**.
+    - **Construir un modelo** (Gradient Boosting Regressor) que permita **simular escenarios**
+      y anticipar movimientos del tipo de cambio.
+    """)
+
     # ----------------------------------------------------------------
     # TIMELINE INTERACTIVO (USANDO SLIDER)
     # ----------------------------------------------------------------
@@ -204,17 +215,7 @@ if pagina == "Inicio y línea de tiempo":
         st.markdown(f"- {bullet}")
 
     st.progress(idx / (len(TIMELINE) - 1))
-    st.write("""
-    Para áreas de **logística, finanzas y planificación**, la volatilidad del tipo de cambio es clave:
-    impacta directamente en el costo de importaciones, contratos en dólares y cobertura de riesgos.
-
-    El objetivo es:
-    - **Cuantificar** cómo se mueve el TC de un mes a otro (rendimientos logarítmicos).
-    - **Identificar variables explicativas** relevantes mediante selección por **Forward**.
-    - **Construir un modelo** (Gradient Boosting Regressor) que permita **simular escenarios**
-      y anticipar movimientos del tipo de cambio.
-    """)
-
+   
     st.markdown("---")
     st.subheader("Histórico del tipo de cambio")
 

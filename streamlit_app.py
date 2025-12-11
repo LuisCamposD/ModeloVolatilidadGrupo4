@@ -101,7 +101,6 @@ TIMELINE = [
     },
 ]
 
-# Mapa global de meses (para Colab y Streamlit)
 MAPA_MESES = {
     "Ene": 1, "Feb": 2, "Mar": 3, "Abr": 4, "May": 5, "Jun": 6,
     "Jul": 7, "Ago": 8, "Set": 9, "Sep": 9, "Oct": 10, "Nov": 11, "Dic": 12,
@@ -119,7 +118,40 @@ def cargar_recursos():
     # Cargar datos limpios
     df = pd.read_csv("datos_tc_limpios.csv")
 
-    # -------- 2) Crear columna fecha --------
+    # ========== 1) Detectar columna de tipo de cambio (tc_col) ==========
+    posibles_tc = [
+        "TC",
+        "tc",
+        "TC_venta",
+        "tc_venta",
+        "Tipo de cambio - TC Sistema bancario SBS (S/ por US$) - Venta",
+        "Tipo de cambio - TC Sistema bancario SBS (S/ por US$) - Venta ",
+        "Tipo_de_cambio",
+    ]
+
+    tc_col = None
+    # Buscar por nombres exactos
+    for col in posibles_tc:
+        if col in df.columns:
+            tc_col = col
+            break
+
+    # Buscar por texto aproximado si no se encontró
+    if tc_col is None:
+        for col in df.columns:
+            nombre = col.lower()
+            if "tipo de cambio" in nombre or nombre == "tc":
+                tc_col = col
+                break
+
+    if tc_col is None:
+        # Si llegamos aquí, no sabemos cuál es el tipo de cambio
+        raise KeyError(
+            f"No se encontró columna de Tipo de Cambio en el CSV. "
+            f"Columnas disponibles: {list(df.columns)}"
+        )
+
+    # ========== 2) Fecha y ordenamiento ==========
     if "fecha" not in df.columns:
         if "anio" in df.columns and "mes" in df.columns:
             df["mes_num"] = df["mes"].map(MAPA_MESES)
@@ -131,23 +163,28 @@ def cargar_recursos():
     else:
         df["fecha"] = pd.to_datetime(df["fecha"])
 
-    # Asegurar mes_num
     if "mes_num" not in df.columns and "mes" in df.columns:
         df["mes_num"] = df["mes"].map(MAPA_MESES)
 
-    # Ordenar por fecha
     df = df.sort_values("fecha").reset_index(drop=True)
 
-    # -------- 3) Crear rendimientos logarítmicos --------
+    # ========== 3) Rendimientos logarítmicos ==========
     df_mod = df.copy()
-    df_mod["Rendimientos_log"] = np.log(df_mod["TC"] / df_mod["TC"].shift(1))
-    df_mod = df_mod.dropna(subset=["Rendimientos_log"])
 
-    return modelo, imputer, scaler, selected_vars, df, df_mod
+    if "Rendimientos_log" in df_mod.columns:
+        # Si ya lo calculaste en el Colab y lo guardaste en el CSV
+        df_mod = df_mod.dropna(subset=["Rendimientos_log"])
+    else:
+        # Si no existe, lo calculamos usando la columna de TC detectada
+        df_mod["Rendimientos_log"] = np.log(
+            df_mod[tc_col] / df_mod[tc_col].shift(1)
+        )
+        df_mod = df_mod.dropna(subset=["Rendimientos_log"])
+
+    return modelo, imputer, scaler, selected_vars, df, df_mod, tc_col
 
 
-
-modelo, imputer, scaler, selected_vars, df, df_mod = cargar_recursos()
+modelo, imputer, scaler, selected_vars, df, df_mod, tc_col = cargar_recursos()
 
 # ---------- 2. Sidebar: navegación ----------
 st.sidebar.title("Menú")
@@ -233,7 +270,7 @@ if pagina == "Inicio y línea de tiempo":
 
     with col1:
         fig, ax = plt.subplots(figsize=(10, 4))
-        ax.plot(df_tc["fecha"], df_tc["TC"], marker="o", linewidth=1)
+        ax.plot(df_tc["fecha"], df_tc[tc_col], marker="o", linewidth=1)
         ax.set_title("Evolución del Tipo de Cambio de Venta")
         ax.set_xlabel("Fecha")
         ax.set_ylabel("TC (S/.)")
@@ -244,9 +281,9 @@ if pagina == "Inicio y línea de tiempo":
     with col2:
         st.write("**Resumen rápido:**")
         st.write(f"- Observaciones: {len(df_tc)}")
-        st.write(f"- TC mínimo: {df_tc['TC'].min():.4f}")
-        st.write(f"- TC máximo: {df_tc['TC'].max():.4f}")
-        st.write(f"- TC promedio: {df_tc['TC'].mean():.4f}")
+        st.write(f"- TC mínimo: {df_tc[tc_col].min():.4f}")
+        st.write(f"- TC máximo: {df_tc[tc_col].max():.4f}")
+        st.write(f"- TC promedio: {df_tc[tc_col].mean():.4f}")
 
         st.info("""
         La línea de tiempo nos permite ubicar:
@@ -274,15 +311,15 @@ elif pagina == "EDA":
 
     fig, ax = plt.subplots(figsize=(6, 3))
     sns.heatmap(df.isnull(), cbar=False, ax=ax)
-    ax.setTitle = "Mapa de valores faltantes"
+    ax.set_title("Mapa de valores faltantes")
     st.pyplot(fig)
 
     st.markdown("---")
-    st.subheader("Distribución del tipo de cambio (TC)")
+    st.subheader("Distribución del tipo de cambio (columna TC original)")
 
     fig, ax = plt.subplots(figsize=(5, 3))
-    sns.boxplot(x=df["TC"], ax=ax)
-    ax.set_title("Boxplot del Tipo de Cambio de Venta (TC)")
+    sns.boxplot(x=df[tc_col], ax=ax)
+    ax.set_title("Boxplot del Tipo de Cambio de Venta")
     st.pyplot(fig)
 
     st.markdown("---")
@@ -382,7 +419,8 @@ elif pagina == "Modelo y predicciones":
 
         st.write(f"**Rendimiento logarítmico predicho:** {rend_log_pred:.6f}")
 
-        ultimo_tc = df_mod["TC"].iloc[-1]
+        # Usamos la columna de TC detectada
+        ultimo_tc = df_mod[tc_col].iloc[-1]
         tc_esperado = ultimo_tc * np.exp(rend_log_pred)
 
         st.write(f"Último tipo de cambio observado: **{ultimo_tc:.4f}**")
@@ -402,10 +440,9 @@ elif pagina == "Modelo y predicciones":
     las demás variables explicativas, replicando la lógica del Colab.
     """)
 
-    # Datos ordenados por fecha
     df_ordenado = df.sort_values("fecha").reset_index(drop=True)
 
-    # Preparar lista de meses para el selectbox
+    # Lista de meses para el selectbox
     meses_nombres = sorted(
         list({m for m in df_ordenado["mes"].unique()} | set(MAPA_MESES.keys())),
         key=lambda m: MAPA_MESES.get(m, 13),
@@ -437,9 +474,9 @@ elif pagina == "Modelo y predicciones":
     if st.button("Calcular predicción multi-mes"):
         # Último registro de features y último TC
         ultimo_X = df_mod[selected_vars].iloc[-1].copy()
-        ultimo_tc = df_ordenado["TC"].iloc[-1]
+        ultimo_tc = df_ordenado[tc_col].iloc[-1]
 
-        # Generar lista de (anio, mes_num) futuros
+        # Generar meses futuros
         meses_futuro = []
         mes_actual = mes_inicio
         anio_actual = int(anio_input)
@@ -453,15 +490,13 @@ elif pagina == "Modelo y predicciones":
 
         df_futuro = pd.DataFrame(meses_futuro, columns=["anio", "mes_num"])
 
-        # Construir features futuras:
-        # 'anio' toma el año futuro, el resto se mantiene como el último registro
+        # Construir features futuras
         for col in selected_vars:
             if col == "anio":
                 df_futuro[col] = df_futuro["anio"]
             else:
                 df_futuro[col] = ultimo_X[col]
 
-        # MISMO PIPELINE QUE EN COLAB: imputar + escalar + predecir
         X_fut_imp = imputer.transform(df_futuro[selected_vars])
         X_fut_scaled = scaler.transform(X_fut_imp)
         rendimientos_pred = modelo.predict(X_fut_scaled)
@@ -479,15 +514,14 @@ elif pagina == "Modelo y predicciones":
         mes_dict_inv = {v: k for k, v in MAPA_MESES.items()}
         df_futuro["mes"] = df_futuro["mes_num"].map(mes_dict_inv)
 
-        # Mostrar tabla de predicciones
         st.write("### Predicciones futuras")
         st.dataframe(df_futuro[["anio", "mes", "TC_predicho"]])
 
-        # Gráfico histórico + predicho (como en Colab)
+        # Gráfico histórico + predicho (como en el Colab)
         fig, ax = plt.subplots(figsize=(10, 4))
 
         x_hist = np.arange(len(df_ordenado))
-        ax.plot(x_hist, df_ordenado["TC"], label="TC real (histórico)")
+        ax.plot(x_hist, df_ordenado[tc_col], label="TC real (histórico)")
 
         x_fut = np.arange(len(df_ordenado), len(df_ordenado) + num_meses)
         ax.plot(

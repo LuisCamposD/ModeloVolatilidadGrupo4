@@ -358,6 +358,9 @@ elif pagina == "Modelo y predicciones":
     rmse_test = np.sqrt(mean_squared_error(y_test, y_pred_test))
     r2_test = r2_score(y_test, y_pred_test)
 
+    # 🔹 Sesgo promedio del modelo en test
+    bias = (y_pred_test - y_test).mean()
+
     # ---- Métricas en TODO el histórico (in-sample) ----
     X_all_imp = imputer.transform(X)
     X_all_scaled = scaler.transform(X_all_imp)
@@ -380,7 +383,7 @@ elif pagina == "Modelo y predicciones":
         st.metric("MAE (in-sample)", f"{mae_all:.6f}")
         st.metric("RMSE (in-sample)", f"{rmse_all:.6f}")
 
-    # Gráfico: usamos el conjunto de prueba para mostrar real vs predicho
+    # Gráfico test
     st.markdown("### Rendimientos logarítmicos en el conjunto de prueba")
     fig, ax = plt.subplots(figsize=(8, 3))
     ax.plot(y_test.values, label="Real", alpha=0.8)
@@ -396,7 +399,7 @@ elif pagina == "Modelo y predicciones":
 
     st.write("""
     Selecciona el *año y el mes de inicio* para proyectar el tipo de cambio varios meses hacia adelante.
-    El modelo usará el último registro de datos como base y calculará el TC esperado.
+    El modelo usará el último registro de datos como base y calculará un **escenario acotado** del TC esperado.
     """)
 
     df_ordenado = df.sort_values("fecha").reset_index(drop=True)
@@ -456,10 +459,20 @@ elif pagina == "Modelo y predicciones":
             else:
                 df_futuro[col] = ultimo_X[col]
 
+        # Imputar + escalar
         X_fut_imp = imputer.transform(df_futuro[selected_vars])
         X_fut_scaled = scaler.transform(X_fut_imp)
-        rendimientos_pred = modelo.predict(X_fut_scaled)
 
+        # Predicción cruda
+        rendimientos_raw = modelo.predict(X_fut_scaled)
+
+        # 🔹 1) Corregimos sesgo usando el desempeño en test
+        rendimientos_corr = rendimientos_raw - bias
+
+        # 🔹 2) Limitamos rendimientos mensuales a un rango razonable ±5%
+        rendimientos_pred = np.clip(rendimientos_corr, -0.05, 0.05)
+
+        # Reconstrucción del tipo de cambio
         tc_pred = []
         tc_actual = ultimo_tc
         for r in rendimientos_pred:
@@ -471,7 +484,7 @@ elif pagina == "Modelo y predicciones":
         mes_dict_inv = {v: k for k, v in MAPA_MESES.items()}
         df_futuro["mes"] = df_futuro["mes_num"].map(mes_dict_inv)
 
-        st.write("### Predicciones futuras")
+        st.write("### Escenario de predicción futura")
         st.dataframe(df_futuro[["anio", "mes", "TC_predicho"]])
 
         fig, ax = plt.subplots(figsize=(10, 4))

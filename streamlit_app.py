@@ -4,7 +4,10 @@ import numpy as np
 import joblib
 import matplotlib.pyplot as plt
 import seaborn as sns
+
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler
 
 sns.set(style="whitegrid")
 
@@ -106,16 +109,14 @@ MAPA_MESES = {
     "Jul": 7, "Ago": 8, "Set": 9, "Sep": 9, "Oct": 10, "Nov": 11, "Dic": 12,
 }
 
-# ---------- 1. Cargar modelo, imputer, scaler, variables y datos ----------
+# ---------- 1. Cargar modelo, variables, datos y reentrenar imputer/scaler ----------
 @st.cache_resource
 def cargar_recursos():
-    # Cargar artefactos entrenados en Colab
+    # Cargar artefactos entrenados en Colab (solo modelo y variables)
     modelo = joblib.load("gbr_mejor_modelo_tc.pkl")
     selected_vars = joblib.load("selected_vars_volatilidad.pkl")
-    imputer = joblib.load("imputer_volatilidad.pkl")
-    scaler = joblib.load("scaler_volatilidad.pkl")
 
-    # OJO: usar el nombre real del CSV en tu repo
+    # CSV real del repo
     df = pd.read_csv("datos_tc_limpios.csv")
 
     # ========== 1) Detectar columna de tipo de cambio (tc_col) ==========
@@ -130,13 +131,11 @@ def cargar_recursos():
     ]
 
     tc_col = None
-    # Buscar por nombres exactos
     for col in posibles_tc:
         if col in df.columns:
             tc_col = col
             break
 
-    # Buscar por texto aproximado si no se encontró
     if tc_col is None:
         for col in df.columns:
             nombre = col.lower()
@@ -168,23 +167,30 @@ def cargar_recursos():
     df = df.sort_values("fecha").reset_index(drop=True)
 
     # ========== 3) Rendimientos logarítmicos ==========
-    # Creamos df_mod a partir del mismo CSV
     df_mod = df.copy()
     df_mod["Rendimientos_log"] = np.log(
         df_mod[tc_col] / df_mod[tc_col].shift(1)
     )
     df_mod = df_mod.dropna(subset=["Rendimientos_log"])
 
+    # ========== 4) Reentrenar imputer y scaler con las variables seleccionadas ==========
+    X_full = df_mod[selected_vars].copy()
+
+    imputer = SimpleImputer(strategy="median")
+    X_imp = imputer.fit_transform(X_full)
+
+    scaler = StandardScaler()
+    scaler.fit(X_imp)
+
     return modelo, imputer, scaler, selected_vars, df, df_mod, tc_col
 
 
-# ---------- Carga de recursos con manejo de errores ----------
 st.write("🔄 Inicializando app y cargando recursos...")
 
 try:
     modelo, imputer, scaler, selected_vars, df, df_mod, tc_col = cargar_recursos()
 except Exception as e:
-    st.error("❌ Error cargando los recursos (modelo, imputador, scaler o datos).")
+    st.error("❌ Error cargando los recursos (modelo, datos o transformaciones).")
     st.exception(e)
     st.stop()
 
@@ -221,9 +227,7 @@ if pagina == "Inicio y línea de tiempo":
       y anticipar movimientos del tipo de cambio.
     """)
 
-    # ----------------------------------------------------------------
-    # TIMELINE INTERACTIVO
-    # ----------------------------------------------------------------
+    # Timeline
     st.markdown("---")
     st.subheader("Timeline: Evolución del análisis de la volatilidad del tipo de cambio")
 
@@ -263,9 +267,7 @@ if pagina == "Inicio y línea de tiempo":
     else:
         st.progress(1.0)
 
-    # ----------------------------------------------------------------
-    # HISTÓRICO DEL TIPO DE CAMBIO
-    # ----------------------------------------------------------------
+    # Histórico TC
     st.markdown("---")
     st.subheader("Histórico del tipo de cambio")
 
@@ -347,9 +349,7 @@ elif pagina == "EDA":
 elif pagina == "Modelo y predicciones":
     st.title("Modelo de Volatilidad y Predicciones")
 
-    # =========================
-    # 5.1 Performance del modelo
-    # =========================
+    # 5.1 Performance
     st.subheader("Performance del modelo en el conjunto de prueba")
 
     X = df_mod[selected_vars]
@@ -361,7 +361,6 @@ elif pagina == "Modelo y predicciones":
     y_train = y.iloc[:train_size]
     y_test = y.iloc[train_size:]
 
-    # Imputar + escalar + predecir
     X_test_imp = imputer.transform(X_test)
     X_test_scaled = scaler.transform(X_test_imp)
     y_pred = modelo.predict(X_test_scaled)
@@ -385,9 +384,7 @@ elif pagina == "Modelo y predicciones":
         plt.tight_layout()
         st.pyplot(fig)
 
-    # =========================
-    # 5.2 Predicción multi-mes
-    # =========================
+    # 5.2 Predicción futura
     st.markdown("---")
     st.subheader("Predicción de varios meses hacia adelante")
 
@@ -396,10 +393,8 @@ elif pagina == "Modelo y predicciones":
     El modelo usará el último registro de datos como base y calculará el TC esperado.
     """)
 
-    # Datos ordenados por fecha
     df_ordenado = df.sort_values("fecha").reset_index(drop=True)
 
-    # Lista de meses para el selectbox
     if "mes" in df_ordenado.columns:
         meses_nombres = sorted(
             list({m for m in df_ordenado["mes"].unique()} | set(MAPA_MESES.keys())),
@@ -433,11 +428,9 @@ elif pagina == "Modelo y predicciones":
         num_meses = st.slider("Número de meses a predecir", 1, 24, 5)
 
     if st.button("Calcular predicción"):
-        # Último registro de features y TC
         ultimo_X = df_mod[selected_vars].iloc[-1].copy()
         ultimo_tc = df_ordenado[tc_col].iloc[-1]
 
-        # Generar lista de (año, mes_num) futuros
         meses_futuro = []
         mes_actual = mes_inicio
         anio_actual = int(anio_input)
@@ -451,19 +444,16 @@ elif pagina == "Modelo y predicciones":
 
         df_futuro = pd.DataFrame(meses_futuro, columns=["anio", "mes_num"])
 
-        # Construir features futuras (mantener últimos valores de las demás variables)
         for col in selected_vars:
             if col == "anio":
                 df_futuro[col] = df_futuro["anio"]
             else:
                 df_futuro[col] = ultimo_X[col]
 
-        # Imputar + escalar + predecir
         X_fut_imp = imputer.transform(df_futuro[selected_vars])
         X_fut_scaled = scaler.transform(X_fut_imp)
         rendimientos_pred = modelo.predict(X_fut_scaled)
 
-        # Reconstrucción del tipo de cambio
         tc_pred = []
         tc_actual = ultimo_tc
         for r in rendimientos_pred:
@@ -472,15 +462,12 @@ elif pagina == "Modelo y predicciones":
 
         df_futuro["TC_predicho"] = tc_pred
 
-        # Mapear número de mes a nombre
         mes_dict_inv = {v: k for k, v in MAPA_MESES.items()}
         df_futuro["mes"] = df_futuro["mes_num"].map(mes_dict_inv)
 
-        # Mostrar tabla de predicciones
         st.write("### Predicciones futuras")
         st.dataframe(df_futuro[["anio", "mes", "TC_predicho"]])
 
-        # Gráfico histórico + predicho
         fig, ax = plt.subplots(figsize=(10, 4))
         x_hist = np.arange(len(df_ordenado))
         ax.plot(x_hist, df_ordenado[tc_col], label="TC real (histórico)")
@@ -491,7 +478,6 @@ elif pagina == "Modelo y predicciones":
             df_futuro["TC_predicho"],
             label=f"TC predicho ({num_meses} meses desde {mes_nombre}/{int(anio_input)})",
             marker="o",
-            color="red",
         )
 
         ax.set_title(

@@ -5,15 +5,16 @@ import joblib
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from sklearn.impute import SimpleImputer
 
+sns.set(style="whitegrid")
 
 st.set_page_config(
     page_title="Volatilidad del Tipo de Cambio",
     layout="wide"
 )
+
 # --------------------------------------------------------------------
-# TIMELINE: imágenes y contenido (reaprovechamos el otro repo)
+# CONSTANTES: TIMELINE + MAPA DE MESES
 # --------------------------------------------------------------------
 IMAGES = [
     "https://raw.githubusercontent.com/LuisCamposD/timeline_s1/main/timeline_images/img1.jpg",
@@ -100,52 +101,53 @@ TIMELINE = [
     },
 ]
 
-# ---------- 1. Cargar modelo, imputer, variables y datos ----------
+# Mapa global de meses (para Colab y Streamlit)
+MAPA_MESES = {
+    "Ene": 1, "Feb": 2, "Mar": 3, "Abr": 4, "May": 5, "Jun": 6,
+    "Jul": 7, "Ago": 8, "Set": 9, "Sep": 9, "Oct": 10, "Nov": 11, "Dic": 12,
+}
+
+# ---------- 1. Cargar modelo, imputer, scaler, variables y datos ----------
 @st.cache_resource
 def cargar_recursos():
-    # Cargar modelo entrenado y variables seleccionadas
+    # Cargar artefactos entrenados en Colab
     modelo = joblib.load("gbr_mejor_modelo_tc.pkl")
     selected_vars = joblib.load("selected_vars_volatilidad.pkl")
+    imputer = joblib.load("imputer_volatilidad.pkl")
+    scaler = joblib.load("scaler_volatilidad.pkl")
 
-    # Cargar datos
+    # Cargar datos limpios
     df = pd.read_csv("datos_tc_limpios.csv")
 
     # Crear columna fecha si no existe
     if "fecha" not in df.columns:
         if "anio" in df.columns and "mes" in df.columns:
-            mapa_meses = {
-                "Ene": 1, "Feb": 2, "Mar": 3, "Abr": 4,
-                "May": 5, "Jun": 6, "Jul": 7, "Ago": 8,
-                "Set": 9, "Sep": 9, "Oct": 10, "Nov": 11, "Dic": 12
-            }
-            df_mes_num = df["mes"].map(mapa_meses)
-
+            df["mes_num"] = df["mes"].map(MAPA_MESES)
             df["fecha"] = pd.to_datetime(
-                dict(year=df["anio"], month=df_mes_num, day=1)
+                dict(year=df["anio"], month=df["mes_num"], day=1)
             )
         else:
             df["fecha"] = pd.date_range(start="2000-01-01", periods=len(df), freq="M")
+    else:
+        # Si ya existe, aseguramos tipo datetime
+        df["fecha"] = pd.to_datetime(df["fecha"])
 
-    # 🔹 NUEVO: ordenar por fecha para que el último registro sea la última fecha real
+    # Asegurar columna mes_num
+    if "mes_num" not in df.columns and "mes" in df.columns:
+        df["mes_num"] = df["mes"].map(MAPA_MESES)
+
+    # Ordenar por fecha
     df = df.sort_values("fecha").reset_index(drop=True)
 
-    # Crear rendimiento logarítmico para análisis y métricas sobre la serie ordenada
+    # Crear rendimientos logarítmicos
     df_mod = df.copy()
     df_mod["Rendimientos_log"] = np.log(df_mod["TC"] / df_mod["TC"].shift(1))
     df_mod = df_mod.dropna(subset=["Rendimientos_log"])
 
-    # === Reentrenar imputador con la serie ordenada ===
-    X = df_mod[selected_vars]
-    train_size = int(len(X) * 0.8)
-    X_train = X.iloc[:train_size]
-
-    imputer = SimpleImputer(strategy="median")
-    imputer.fit(X_train)
-
-    return modelo, imputer, selected_vars, df, df_mod
+    return modelo, imputer, scaler, selected_vars, df, df_mod
 
 
-modelo, imputer, selected_vars, df, df_mod = cargar_recursos()
+modelo, imputer, scaler, selected_vars, df, df_mod = cargar_recursos()
 
 # ---------- 2. Sidebar: navegación ----------
 st.sidebar.title("Menú")
@@ -181,7 +183,7 @@ if pagina == "Inicio y línea de tiempo":
     """)
 
     # ----------------------------------------------------------------
-    # TIMELINE INTERACTIVO (USANDO SLIDER)
+    # TIMELINE INTERACTIVO
     # ----------------------------------------------------------------
     st.markdown("---")
     st.subheader("Timeline: Evolución del análisis de la volatilidad del tipo de cambio")
@@ -218,7 +220,10 @@ if pagina == "Inicio y línea de tiempo":
         st.markdown(f"- {bullet}")
 
     st.progress(idx / (len(TIMELINE) - 1))
-   
+
+    # ----------------------------------------------------------------
+    # HISTÓRICO DEL TIPO DE CAMBIO
+    # ----------------------------------------------------------------
     st.markdown("---")
     st.subheader("Histórico del tipo de cambio")
 
@@ -269,7 +274,7 @@ elif pagina == "EDA":
 
     fig, ax = plt.subplots(figsize=(6, 3))
     sns.heatmap(df.isnull(), cbar=False, ax=ax)
-    ax.set_title("Mapa de valores faltantes")
+    ax.setTitle = "Mapa de valores faltantes"
     st.pyplot(fig)
 
     st.markdown("---")
@@ -306,7 +311,6 @@ elif pagina == "Modelo y predicciones":
     # =========================
     st.subheader("Performance del modelo en el conjunto de prueba")
 
-    # Reconstruir X/y igual que en el Colab
     X = df_mod[selected_vars]
     y = df_mod["Rendimientos_log"]
 
@@ -316,8 +320,10 @@ elif pagina == "Modelo y predicciones":
     y_train = y.iloc[:train_size]
     y_test = y.iloc[train_size:]
 
+    # MISMO PIPELINE QUE EN COLAB: imputar + escalar + predecir
     X_test_imp = imputer.transform(X_test)
-    y_pred = modelo.predict(X_test_imp)
+    X_test_scaled = scaler.transform(X_test_imp)
+    y_pred = modelo.predict(X_test_scaled)
 
     mae = mean_absolute_error(y_test, y_pred)
     rmse = np.sqrt(mean_squared_error(y_test, y_pred))
@@ -339,7 +345,7 @@ elif pagina == "Modelo y predicciones":
         st.pyplot(fig)
 
     # =========================
-    # 5.2 Simulador 1 periodo
+    # 5.2 Simulador 1 período
     # =========================
     st.markdown("---")
     st.subheader("Simulador de predicciones (1 período)")
@@ -370,7 +376,9 @@ elif pagina == "Modelo y predicciones":
     if enviado:
         x_new = pd.DataFrame([entrada])
         x_new_imp = imputer.transform(x_new)
-        rend_log_pred = modelo.predict(x_new_imp)[0]
+        x_new_scaled = scaler.transform(x_new_imp)
+
+        rend_log_pred = modelo.predict(x_new_scaled)[0]
 
         st.write(f"**Rendimiento logarítmico predicho:** {rend_log_pred:.6f}")
 
@@ -391,18 +399,18 @@ elif pagina == "Modelo y predicciones":
     st.write("""
     Aquí proyectamos el tipo de cambio para varios meses hacia adelante, 
     usando como base el último valor observado y manteniendo constantes 
-    las demás variables explicativas (como en el Colab).
+    las demás variables explicativas, replicando la lógica del Colab.
     """)
 
-    # Diccionario de meses para convertir nombres a números
-    mes_dict = {
-        "Ene": 1, "Feb": 2, "Mar": 3, "Abr": 4, "May": 5, "Jun": 6,
-        "Jul": 7, "Ago": 8, "Sep": 9, "Oct": 10, "Nov": 11, "Dic": 12,
-    }
-    meses_nombres = list(mes_dict.keys())
-
-    # Tomamos el último registro ordenado por fecha
+    # Datos ordenados por fecha
     df_ordenado = df.sort_values("fecha").reset_index(drop=True)
+
+    # Preparar lista de meses para el selectbox
+    meses_nombres = sorted(
+        list({m for m in df_ordenado["mes"].unique()} | set(MAPA_MESES.keys())),
+        key=lambda m: MAPA_MESES.get(m, 13),
+    )
+
     ultimo_anio = int(df_ordenado["anio"].iloc[-1])
     ultimo_mes_nombre = df_ordenado["mes"].iloc[-1]
     idx_mes_default = meses_nombres.index(ultimo_mes_nombre)
@@ -422,14 +430,14 @@ elif pagina == "Modelo y predicciones":
             options=meses_nombres,
             index=idx_mes_default,
         )
-        mes_inicio = mes_dict[mes_nombre]
+        mes_inicio = MAPA_MESES[mes_nombre]
     with col_c:
         num_meses = st.slider("Número de meses a predecir", 1, 24, 5)
 
     if st.button("Calcular predicción multi-mes"):
-        # Último registro de variables explicativas y TC
+        # Último registro de features y último TC
         ultimo_X = df_mod[selected_vars].iloc[-1].copy()
-        ultimo_tc = df_mod["TC"].iloc[-1]
+        ultimo_tc = df_ordenado["TC"].iloc[-1]
 
         # Generar lista de (anio, mes_num) futuros
         meses_futuro = []
@@ -445,20 +453,20 @@ elif pagina == "Modelo y predicciones":
 
         df_futuro = pd.DataFrame(meses_futuro, columns=["anio", "mes_num"])
 
-        # Construir las features futuras:
-        # - 'anio' toma el año futuro
-        # - el resto de variables se mantiene igual al último registro observado
+        # Construir features futuras:
+        # 'anio' toma el año futuro, el resto se mantiene como el último registro
         for col in selected_vars:
             if col == "anio":
                 df_futuro[col] = df_futuro["anio"]
             else:
                 df_futuro[col] = ultimo_X[col]
 
-        # Imputar y predecir rendimientos logarítmicos
+        # MISMO PIPELINE QUE EN COLAB: imputar + escalar + predecir
         X_fut_imp = imputer.transform(df_futuro[selected_vars])
-        rendimientos_pred = modelo.predict(X_fut_imp)
+        X_fut_scaled = scaler.transform(X_fut_imp)
+        rendimientos_pred = modelo.predict(X_fut_scaled)
 
-        # Reconstrucción del tipo de cambio mes a mes
+        # Reconstrucción del tipo de cambio
         tc_pred = []
         tc_actual = ultimo_tc
         for r in rendimientos_pred:
@@ -468,21 +476,19 @@ elif pagina == "Modelo y predicciones":
         df_futuro["TC_predicho"] = tc_pred
 
         # Mapear número de mes a nombre
-        mes_dict_inv = {v: k for k, v in mes_dict.items()}
+        mes_dict_inv = {v: k for k, v in MAPA_MESES.items()}
         df_futuro["mes"] = df_futuro["mes_num"].map(mes_dict_inv)
 
         # Mostrar tabla de predicciones
         st.write("### Predicciones futuras")
         st.dataframe(df_futuro[["anio", "mes", "TC_predicho"]])
 
-        # Gráfico histórico + predicciones (similar al Colab)
+        # Gráfico histórico + predicho (como en Colab)
         fig, ax = plt.subplots(figsize=(10, 4))
 
-        # Serie histórica (índices 0..N-1)
         x_hist = np.arange(len(df_ordenado))
         ax.plot(x_hist, df_ordenado["TC"], label="TC real (histórico)")
 
-        # Serie futura (N..N+num_meses-1)
         x_fut = np.arange(len(df_ordenado), len(df_ordenado) + num_meses)
         ax.plot(
             x_fut,

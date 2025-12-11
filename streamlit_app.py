@@ -4,7 +4,6 @@ import numpy as np
 import joblib
 import matplotlib.pyplot as plt
 import seaborn as sns
-import traceback
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 sns.set(style="whitegrid")
@@ -116,8 +115,8 @@ def cargar_recursos():
     imputer = joblib.load("imputer_volatilidad.pkl")
     scaler = joblib.load("scaler_volatilidad.pkl")
 
-    # Cargar datos limpios
-    df = pd.read_csv("data_limpia.csv")
+    # OJO: usar el nombre real del CSV en tu repo
+    df = pd.read_csv("datos_tc_limpios.csv")
 
     # ========== 1) Detectar columna de tipo de cambio (tc_col) ==========
     posibles_tc = [
@@ -146,7 +145,6 @@ def cargar_recursos():
                 break
 
     if tc_col is None:
-        # Si llegamos aquí, no sabemos cuál es el tipo de cambio
         raise KeyError(
             f"No se encontró columna de Tipo de Cambio en el CSV. "
             f"Columnas disponibles: {list(df.columns)}"
@@ -170,17 +168,12 @@ def cargar_recursos():
     df = df.sort_values("fecha").reset_index(drop=True)
 
     # ========== 3) Rendimientos logarítmicos ==========
-    df_mod = pd.read_csv("datos_procesados.csv")
-
-    if "Rendimientos_log" in df_mod.columns:
-        # Si ya lo calculaste en el Colab y lo guardaste en el CSV
-        df_mod = df_mod.dropna(subset=["Rendimientos_log"])
-    else:
-        # Si no existe, lo calculamos usando la columna de TC detectada
-        df_mod["Rendimientos_log"] = np.log(
-            df_mod[tc_col] / df_mod[tc_col].shift(1)
-        )
-        df_mod = df_mod.dropna(subset=["Rendimientos_log"])
+    # Creamos df_mod a partir del mismo CSV
+    df_mod = df.copy()
+    df_mod["Rendimientos_log"] = np.log(
+        df_mod[tc_col] / df_mod[tc_col].shift(1)
+    )
+    df_mod = df_mod.dropna(subset=["Rendimientos_log"])
 
     return modelo, imputer, scaler, selected_vars, df, df_mod, tc_col
 
@@ -326,7 +319,7 @@ elif pagina == "EDA":
     st.pyplot(fig)
 
     st.markdown("---")
-    st.subheader("Distribución del tipo de cambio (columna TC original)")
+    st.subheader("Distribución del tipo de cambio")
 
     fig, ax = plt.subplots(figsize=(5, 3))
     sns.boxplot(x=df[tc_col], ax=ax)
@@ -393,7 +386,7 @@ elif pagina == "Modelo y predicciones":
         st.pyplot(fig)
 
     # =========================
-    # 5.2 Predicción multi-mes por inputs de año y mes
+    # 5.2 Predicción multi-mes
     # =========================
     st.markdown("---")
     st.subheader("Predicción de varios meses hacia adelante")
@@ -414,7 +407,6 @@ elif pagina == "Modelo y predicciones":
         )
         ultimo_mes_nombre = df_ordenado["mes"].iloc[-1]
     else:
-        # fallback simple si no existe columna "mes"
         meses_nombres = list(MAPA_MESES.keys())
         ultimo_mes_nombre = "Dic"
 

@@ -340,7 +340,7 @@ elif pagina == "EDA":
     """)
 
 # ---------- 5. Página: Modelo y predicciones ----------
-    elif pagina == "Modelo y predicciones":
+elif pagina == "Modelo y predicciones":
    # ---------- Página: Modelo y predicciones ----------
     st.title("Modelo de Volatilidad y Predicciones")
 

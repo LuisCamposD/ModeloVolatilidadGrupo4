@@ -116,7 +116,7 @@ def cargar_recursos():
     scaler = joblib.load("scaler_volatilidad.pkl")
 
     # Cargar datos limpios
-    df = pd.read_csv("datos_tc_limpios.csv")
+    df = pd.read_csv("data_limpia.csv")
 
     # ========== 1) Detectar columna de tipo de cambio (tc_col) ==========
     posibles_tc = [
@@ -169,7 +169,7 @@ def cargar_recursos():
     df = df.sort_values("fecha").reset_index(drop=True)
 
     # ========== 3) Rendimientos logarítmicos ==========
-    df_mod = df.copy()
+   df_mod = pd.read_csv("datos_procesados.csv")
 
     if "Rendimientos_log" in df_mod.columns:
         # Si ya lo calculaste en el Colab y lo guardaste en el CSV

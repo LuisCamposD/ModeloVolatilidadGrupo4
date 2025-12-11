@@ -109,16 +109,14 @@ MAPA_MESES = {
 # ---------- 1. Cargar modelo, imputer, scaler, variables y datos ----------
 @st.cache_resource
 def cargar_recursos():
-    # 1) Cargamos todo lo entrenado en Colab
     modelo = joblib.load("gbr_mejor_modelo_tc.pkl")
     selected_vars = joblib.load("selected_vars_volatilidad.pkl")
     imputer = joblib.load("imputer_volatilidad.pkl")
     scaler = joblib.load("scaler_volatilidad.pkl")
 
-    # CSV real del repo
     df = pd.read_csv("datos_tc_limpios.csv")
 
-    # ========== 1) Detectar columna de tipo de cambio (tc_col) ==========
+    # Detectar columna TC
     posibles_tc = [
         "TC",
         "tc",
@@ -148,7 +146,7 @@ def cargar_recursos():
             f"Columnas disponibles: {list(df.columns)}"
         )
 
-    # ========== 2) Fecha y ordenamiento ==========
+    # Crear fecha y ordenar
     if "fecha" not in df.columns:
         if "anio" in df.columns and "mes" in df.columns:
             df["mes_num"] = df["mes"].map(MAPA_MESES)
@@ -165,7 +163,7 @@ def cargar_recursos():
 
     df = df.sort_values("fecha").reset_index(drop=True)
 
-    # ========== 3) Rendimientos logarítmicos ==========
+    # Rendimientos logarítmicos
     df_mod = df.copy()
     df_mod["Rendimientos_log"] = np.log(df_mod[tc_col] / df_mod[tc_col].shift(1))
     df_mod = df_mod.dropna(subset=["Rendimientos_log"])
@@ -349,7 +347,6 @@ elif pagina == "Modelo y predicciones":
     y_train = y.iloc[:train_size]
     y_test = y.iloc[train_size:]
 
-    # ---- Métricas en TEST (out-of-sample) ----
     X_test_imp = imputer.transform(X_test)
     X_test_scaled = scaler.transform(X_test_imp)
     y_pred_test = modelo.predict(X_test_scaled)
@@ -358,10 +355,6 @@ elif pagina == "Modelo y predicciones":
     rmse_test = np.sqrt(mean_squared_error(y_test, y_pred_test))
     r2_test = r2_score(y_test, y_pred_test)
 
-    # 🔹 Sesgo promedio del modelo en test
-    bias = (y_pred_test - y_test).mean()
-
-    # ---- Métricas en TODO el histórico (in-sample) ----
     X_all_imp = imputer.transform(X)
     X_all_scaled = scaler.transform(X_all_imp)
     y_pred_all = modelo.predict(X_all_scaled)
@@ -383,7 +376,6 @@ elif pagina == "Modelo y predicciones":
         st.metric("MAE (in-sample)", f"{mae_all:.6f}")
         st.metric("RMSE (in-sample)", f"{rmse_all:.6f}")
 
-    # Gráfico test
     st.markdown("### Rendimientos logarítmicos en el conjunto de prueba")
     fig, ax = plt.subplots(figsize=(8, 3))
     ax.plot(y_test.values, label="Real", alpha=0.8)
@@ -393,13 +385,13 @@ elif pagina == "Modelo y predicciones":
     plt.tight_layout()
     st.pyplot(fig)
 
-    # 5.2 Predicción futura
+    # 5.2 Predicción futura (sin maquillaje: exactamente lo que arroja el modelo)
     st.markdown("---")
     st.subheader("Predicción de varios meses hacia adelante")
 
     st.write("""
     Selecciona el *año y el mes de inicio* para proyectar el tipo de cambio varios meses hacia adelante.
-    El modelo usará el último registro de datos como base y calculará un **escenario acotado** del TC esperado.
+    La predicción que se muestra es **directamente** la salida del modelo, sin correcciones ni límites adicionales.
     """)
 
     df_ordenado = df.sort_values("fecha").reset_index(drop=True)
@@ -459,20 +451,12 @@ elif pagina == "Modelo y predicciones":
             else:
                 df_futuro[col] = ultimo_X[col]
 
-        # Imputar + escalar
         X_fut_imp = imputer.transform(df_futuro[selected_vars])
         X_fut_scaled = scaler.transform(X_fut_imp)
 
-        # Predicción cruda
-        rendimientos_raw = modelo.predict(X_fut_scaled)
+        # AQUÍ: igual que en Colab, predicción directa del modelo
+        rendimientos_pred = modelo.predict(X_fut_scaled)
 
-        # 🔹 1) Corregimos sesgo usando el desempeño en test
-        rendimientos_corr = rendimientos_raw - bias
-
-        # 🔹 2) Limitamos rendimientos mensuales a un rango razonable ±5%
-        rendimientos_pred = np.clip(rendimientos_corr, -0.05, 0.05)
-
-        # Reconstrucción del tipo de cambio
         tc_pred = []
         tc_actual = ultimo_tc
         for r in rendimientos_pred:
@@ -484,7 +468,7 @@ elif pagina == "Modelo y predicciones":
         mes_dict_inv = {v: k for k, v in MAPA_MESES.items()}
         df_futuro["mes"] = df_futuro["mes_num"].map(mes_dict_inv)
 
-        st.write("### Escenario de predicción futura")
+        st.write("### Predicciones futuras (sin ajuste)")
         st.dataframe(df_futuro[["anio", "mes", "TC_predicho"]])
 
         fig, ax = plt.subplots(figsize=(10, 4))

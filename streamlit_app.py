@@ -346,7 +346,9 @@ elif pagina == "EDA":
 elif pagina == "Modelo y predicciones":
     st.title("Modelo de Volatilidad y Predicciones")
 
-    # 5.1 Performance
+    # =========================
+    # 5.1 Performance del modelo (igual que en Colab)
+    # =========================
     st.subheader("Performance del modelo en el conjunto de prueba")
 
     X = df_mod[selected_vars]
@@ -358,6 +360,7 @@ elif pagina == "Modelo y predicciones":
     y_train = y.iloc[:train_size]
     y_test = y.iloc[train_size:]
 
+    # Imputar + escalar + predecir
     X_test_imp = imputer.transform(X_test)
     X_test_scaled = scaler.transform(X_test_imp)
     y_pred = modelo.predict(X_test_scaled)
@@ -371,6 +374,7 @@ elif pagina == "Modelo y predicciones":
         st.metric("R2", f"{r2:.4f}")
         st.metric("MAE", f"{mae:.6f}")
         st.metric("RMSE", f"{rmse:.6f}")
+
     with col2:
         fig, ax = plt.subplots(figsize=(8, 3))
         ax.plot(y_test.values, label="Real", alpha=0.8)
@@ -380,17 +384,25 @@ elif pagina == "Modelo y predicciones":
         plt.tight_layout()
         st.pyplot(fig)
 
-    # 5.2 Predicción multi-mes
+    # =========================
+    # 5.2 Predicción multi-mes (MISMA LÓGICA QUE EN EL COLAB)
+    # =========================
     st.markdown("---")
     st.subheader("Predicción de varios meses hacia adelante")
 
     st.write("""
-    Selecciona el *año y el mes de inicio* para proyectar el tipo de cambio varios meses hacia adelante.
-    El modelo usa el último registro histórico como base y calcula el TC esperado, igual que en tu Colab.
+    Selecciona el **año y mes de inicio** para proyectar el tipo de cambio varios meses hacia adelante.
+    El modelo usa el **último registro histórico** como base y reconstruye el TC predicho
+    tal como lo haces en el Colab.
     """)
 
-    df_ordenado = df.sort_values("fecha").reset_index(drop=True)
+    # Datos ordenados por año y mes (igual que en el Colab)
+    if "mes_num" not in df.columns and "mes" in df.columns:
+        df["mes_num"] = df["mes"].map(MAPA_MESES)
 
+    df_ordenado = df.sort_values(["anio", "mes_num"]).reset_index(drop=True)
+
+    # Lista de meses disponibles (para el combo)
     meses_nombres = sorted(
         list({m for m in df_ordenado["mes"].unique()} | set(MAPA_MESES.keys())),
         key=lambda m: MAPA_MESES.get(m, 13),
@@ -420,9 +432,13 @@ elif pagina == "Modelo y predicciones":
         num_meses = st.slider("Número de meses a predecir", 1, 24, 5)
 
     if st.button("Calcular predicción"):
+        # ----------- ESTA PARTE ES CLAVE: replica tu Colab -----------
+
+        # 1) Último registro de variables explicativas y último TC histórico
         ultimo_X = df_mod[selected_vars].iloc[-1].copy()
         ultimo_tc = df_ordenado[tc_col].iloc[-1]
 
+        # 2) Generar lista (anio, mes_num) futuros EXACTO como en Colab
         meses_futuro = []
         mes_actual = mes_inicio
         anio_actual = int(anio_input)
@@ -434,33 +450,39 @@ elif pagina == "Modelo y predicciones":
                 mes_actual = 1
                 anio_actual += 1
 
+        # DataFrame con años y meses futuros
         df_futuro = pd.DataFrame(meses_futuro, columns=["anio", "mes_num"])
 
+        # 3) Copiar las otras variables de último_X
+        #    (NO pisamos anio ni mes_num, igual que en tu Colab)
         for col in selected_vars:
-            if col == "anio":
-                df_futuro[col] = df_futuro["anio"]
-            else:
-                df_futuro[col] = ultimo_X[col]
+            if col in ["anio", "mes_num"]:
+                continue
+            df_futuro[col] = ultimo_X[col]
 
+        # 4) Imputar + escalar + predecir rendimientos
         X_fut_imp = imputer.transform(df_futuro[selected_vars])
         X_fut_scaled = scaler.transform(X_fut_imp)
         rendimientos_pred = modelo.predict(X_fut_scaled)
 
-        tc_pred = []
-        tc_actual = ultimo_tc
-        for r in rendimientos_pred:
-            tc_actual = tc_actual * np.exp(r)
-            tc_pred.append(tc_actual)
+        # 5) Reconstruir el tipo de cambio a partir del último TC real
+        tc_pred = [ultimo_tc * np.exp(rendimientos_pred[0])]
+        for r in rendimientos_pred[1:]:
+            tc_pred.append(tc_pred[-1] * np.exp(r))
 
         df_futuro["TC_predicho"] = tc_pred
 
+        # 6) Mapear mes_num a nombre de mes (igual que en Colab)
         mes_dict_inv = {v: k for k, v in MAPA_MESES.items()}
         df_futuro["mes"] = df_futuro["mes_num"].map(mes_dict_inv)
 
+        # 7) Mostrar tabla de predicciones
         st.write("### Predicciones futuras")
         st.dataframe(df_futuro[["anio", "mes", "TC_predicho"]])
 
+        # 8) Gráfico histórico + predicciones (idéntico enfoque al Colab)
         fig, ax = plt.subplots(figsize=(10, 4))
+
         x_hist = np.arange(len(df_ordenado))
         ax.plot(x_hist, df_ordenado[tc_col], label="TC real (histórico)")
 

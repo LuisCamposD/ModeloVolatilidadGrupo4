@@ -126,12 +126,15 @@ def cargar_recursos():
         else:
             df["fecha"] = pd.date_range(start="2000-01-01", periods=len(df), freq="M")
 
-    # Crear rendimiento logarítmico para análisis y métricas
+    # 🔹 NUEVO: ordenar por fecha para que el último registro sea la última fecha real
+    df = df.sort_values("fecha").reset_index(drop=True)
+
+    # Crear rendimiento logarítmico para análisis y métricas sobre la serie ordenada
     df_mod = df.copy()
     df_mod["Rendimientos_log"] = np.log(df_mod["TC"] / df_mod["TC"].shift(1))
     df_mod = df_mod.dropna(subset=["Rendimientos_log"])
 
-    # === Aquí re-entrenamos el imputador con los mismos datos que en Colab ===
+    # === Reentrenar imputador con la serie ordenada ===
     X = df_mod[selected_vars]
     train_size = int(len(X) * 0.8)
     X_train = X.iloc[:train_size]

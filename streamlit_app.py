@@ -111,7 +111,7 @@ MAPA_MESES = {
 
 # ---------- 1. Cargar modelo, variables, datos y reentrenar imputer/scaler ----------
 @st.cache_resource
-    def cargar_recursos():
+def cargar_recursos():
     # 1) Cargamos todo lo entrenado en Colab
     modelo = joblib.load("gbr_mejor_modelo_tc.pkl")
     selected_vars = joblib.load("selected_vars_volatilidad.pkl")

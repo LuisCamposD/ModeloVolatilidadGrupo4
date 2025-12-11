@@ -273,7 +273,7 @@ if pagina == "Inicio y línea de tiempo":
 
     with col2:
         st.write("**Resumen rápido:**")
-        st.write(f"- Observaciones: {len(df_tc)}")
+        st.write(f"- Observaciones: {len[df_tc] if False else len(df_tc)}")
         st.write(f"- TC mínimo: {df_tc[tc_col].min():.4f}")
         st.write(f"- TC máximo: {df_tc[tc_col].max():.4f}")
         st.write(f"- TC promedio: {df_tc[tc_col].mean():.4f}")
@@ -385,13 +385,13 @@ elif pagina == "Modelo y predicciones":
     plt.tight_layout()
     st.pyplot(fig)
 
-    # 5.2 Predicción futura (sin maquillaje: exactamente lo que arroja el modelo)
+    # 5.2 Predicción futura (misma lógica que en Colab)
     st.markdown("---")
     st.subheader("Predicción de varios meses hacia adelante")
 
     st.write("""
     Selecciona el *año y el mes de inicio* para proyectar el tipo de cambio varios meses hacia adelante.
-    La predicción que se muestra es **directamente** la salida del modelo, sin correcciones ni límites adicionales.
+    La predicción que se muestra es **directamente** la salida del modelo, usando la misma lógica que en el notebook.
     """)
 
     df_ordenado = df.sort_values("fecha").reset_index(drop=True)
@@ -429,9 +429,11 @@ elif pagina == "Modelo y predicciones":
         num_meses = st.slider("Número de meses a predecir", 1, 24, 5)
 
     if st.button("Calcular predicción"):
+        # Último registro de features y último TC histórico
         ultimo_X = df_mod[selected_vars].iloc[-1].copy()
         ultimo_tc = df_ordenado[tc_col].iloc[-1]
 
+        # Generar lista de (anio, mes_num) futuros
         meses_futuro = []
         mes_actual = mes_inicio
         anio_actual = int(anio_input)
@@ -443,32 +445,36 @@ elif pagina == "Modelo y predicciones":
                 mes_actual = 1
                 anio_actual += 1
 
+        # DataFrame con años y meses futuros
         df_futuro = pd.DataFrame(meses_futuro, columns=["anio", "mes_num"])
 
+        # Copiar variables predictoras del último registro,
+        # SIN sobrescribir 'anio' ni 'mes_num' que ya tienen los valores futuros
         for col in selected_vars:
-            if col == "anio":
-                df_futuro[col] = df_futuro["anio"]
-            else:
-                df_futuro[col] = ultimo_X[col]
+            if col in ["anio", "mes_num"]:
+                continue
+            df_futuro[col] = ultimo_X[col]
 
+        # Imputar + escalar igual que en el entrenamiento
         X_fut_imp = imputer.transform(df_futuro[selected_vars])
         X_fut_scaled = scaler.transform(X_fut_imp)
 
-        # AQUÍ: igual que en Colab, predicción directa del modelo
+        # Predicción directa de rendimientos logarítmicos (igual que en Colab)
         rendimientos_pred = modelo.predict(X_fut_scaled)
 
-        tc_pred = []
-        tc_actual = ultimo_tc
-        for r in rendimientos_pred:
-            tc_actual = tc_actual * np.exp(r)
-            tc_pred.append(tc_actual)
+        # Reconstrucción del tipo de cambio a partir del último TC histórico
+        tc_pred = [ultimo_tc * np.exp(rendimientos_pred[0])]
+        for r in rendimientos_pred[1:]:
+            tc_pred.append(tc_pred[-1] * np.exp(r))
 
         df_futuro["TC_predicho"] = tc_pred
 
+        # Mapear número de mes a nombre
         mes_dict_inv = {v: k for k, v in MAPA_MESES.items()}
         df_futuro["mes"] = df_futuro["mes_num"].map(mes_dict_inv)
+        df_futuro["anio"] = df_futuro["anio"].astype(int)
 
-        st.write("### Predicciones futuras (sin ajuste)")
+        st.write("### Predicciones futuras")
         st.dataframe(df_futuro[["anio", "mes", "TC_predicho"]])
 
         fig, ax = plt.subplots(figsize=(10, 4))

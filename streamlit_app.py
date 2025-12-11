@@ -4,7 +4,6 @@ import numpy as np
 import joblib
 import matplotlib.pyplot as plt
 import seaborn as sns
-
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 sns.set(style="whitegrid")
@@ -107,7 +106,7 @@ MAPA_MESES = {
     "Jul": 7, "Ago": 8, "Set": 9, "Sep": 9, "Oct": 10, "Nov": 11, "Dic": 12,
 }
 
-# ---------- 1. Cargar modelo, variables, datos y reentrenar imputer/scaler ----------
+# ---------- 1. Cargar modelo, imputer, scaler, variables y datos ----------
 @st.cache_resource
 def cargar_recursos():
     # 1) Cargamos todo lo entrenado en Colab
@@ -170,6 +169,7 @@ def cargar_recursos():
     df_mod = df.copy()
     df_mod["Rendimientos_log"] = np.log(df_mod[tc_col] / df_mod[tc_col].shift(1))
     df_mod = df_mod.dropna(subset=["Rendimientos_log"])
+
     return modelo, imputer, scaler, selected_vars, df, df_mod, tc_col
 
 

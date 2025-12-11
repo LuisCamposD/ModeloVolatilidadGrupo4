@@ -191,7 +191,7 @@ def cargar_recursos():
     scaler = StandardScaler()
     scaler.fit(X_train_imp)
 
-    return modelo, imputer, scaler, selected_vars, df, df_mod, tc_col
+    return modelo, imputer, scaler, selected_vars, df2, df_mod, tc_col
 
 
 modelo, imputer, scaler, selected_vars, df2, df_mod, tc_col = cargar_recursos()

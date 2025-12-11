@@ -166,7 +166,7 @@ if pagina == "Inicio y línea de tiempo":
     """)
 
     st.subheader("Problemática")
-     st.write("""
+    st.write("""
     Para áreas de **logística, finanzas y planificación**, la volatilidad del tipo de cambio es clave:
     impacta directamente en el costo de importaciones, contratos en dólares y cobertura de riesgos.
 

@@ -131,12 +131,12 @@ def cargar_recursos():
 
     tc_col = None
     for col in posibles_tc:
-        if col in df.columns:
+        if col in df2.columns:
             tc_col = col
             break
 
     if tc_col is None:
-        for col in df.columns:
+        for col in df2.columns:
             nombre = col.lower()
             if "tipo de cambio" in nombre or nombre == "tc":
                 tc_col = col
@@ -145,23 +145,23 @@ def cargar_recursos():
     if tc_col is None:
         raise KeyError(
             f"No se encontró columna de Tipo de Cambio en data_limpia.csv. "
-            f"Columnas disponibles: {list(df.columns)}"
+            f"Columnas disponibles: {list(df2.columns)}"
         )
 
     # 2) Fecha y ordenamiento
-    if "fecha" not in df.columns:
-        if "anio" in df.columns and "mes" in df.columns:
-            df["mes_num"] = df["mes"].map(MAPA_MESES)
-            df["fecha"] = pd.to_datetime(
+    if "fecha" not in df2.columns:
+        if "anio" in df2.columns and "mes" in df2.columns:
+            df2["mes_num"] = df2["mes"].map(MAPA_MESES)
+            df2["fecha"] = pd.to_datetime(
                 dict(year=df["anio"], month=df["mes_num"], day=1)
             )
         else:
-            df["fecha"] = pd.date_range(start="2000-01-01", periods=len(df), freq="M")
+            df2["fecha"] = pd.date_range(start="2000-01-01", periods=len(df2), freq="M")
     else:
-        df["fecha"] = pd.to_datetime(df["fecha"])
+        df2["fecha"] = pd.to_datetime(df2["fecha"])
 
-    if "mes_num" not in df.columns and "mes" in df.columns:
-        df["mes_num"] = df["mes"].map(MAPA_MESES)
+    if "mes_num" not in df2.columns and "mes" in df2.columns:
+        df2["mes_num"] = df2["mes"].map(MAPA_MESES)
 
     df = df.sort_values("fecha").reset_index(drop=True)
 

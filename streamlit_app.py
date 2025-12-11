@@ -337,8 +337,8 @@ elif pagina == "EDA":
 elif pagina == "Modelo y predicciones":
     st.title("Modelo de Volatilidad y Predicciones")
 
-    # 5.1 Performance
-    st.subheader("Performance del modelo en el conjunto de prueba")
+    # 5.1 Performance del modelo
+    st.subheader("Performance del modelo")
 
     X = df_mod[selected_vars]
     y = df_mod["Rendimientos_log"]
@@ -349,28 +349,46 @@ elif pagina == "Modelo y predicciones":
     y_train = y.iloc[:train_size]
     y_test = y.iloc[train_size:]
 
+    # ---- Métricas en TEST (out-of-sample) ----
     X_test_imp = imputer.transform(X_test)
     X_test_scaled = scaler.transform(X_test_imp)
-    y_pred = modelo.predict(X_test_scaled)
+    y_pred_test = modelo.predict(X_test_scaled)
 
-    mae = mean_absolute_error(y_test, y_pred)
-    rmse = np.sqrt(mean_squared_error(y_test, y_pred))
-    r2 = r2_score(y_test, y_pred)
+    mae_test = mean_absolute_error(y_test, y_pred_test)
+    rmse_test = np.sqrt(mean_squared_error(y_test, y_pred_test))
+    r2_test = r2_score(y_test, y_pred_test)
+
+    # ---- Métricas en TODO el histórico (in-sample) ----
+    X_all_imp = imputer.transform(X)
+    X_all_scaled = scaler.transform(X_all_imp)
+    y_pred_all = modelo.predict(X_all_scaled)
+
+    mae_all = mean_absolute_error(y, y_pred_all)
+    rmse_all = np.sqrt(mean_squared_error(y, y_pred_all))
+    r2_all = r2_score(y, y_pred_all)
 
     col1, col2 = st.columns(2)
     with col1:
-        st.metric("R2", f"{r2:.4f}")
-        st.metric("MAE", f"{mae:.6f}")
-        st.metric("RMSE", f"{rmse:.6f}")
+        st.markdown("**Conjunto de prueba (20% final de la serie)**")
+        st.metric("R2 (test)", f"{r2_test:.4f}")
+        st.metric("MAE (test)", f"{mae_test:.6f}")
+        st.metric("RMSE (test)", f"{rmse_test:.6f}")
 
     with col2:
-        fig, ax = plt.subplots(figsize=(8, 3))
-        ax.plot(y_test.values, label="Real", alpha=0.8)
-        ax.plot(y_pred, label="Predicho", alpha=0.8)
-        ax.set_title("Rendimientos logarítmicos: real vs predicho")
-        ax.legend()
-        plt.tight_layout()
-        st.pyplot(fig)
+        st.markdown("**Todo el histórico (train + test)**")
+        st.metric("R2 (in-sample)", f"{r2_all:.4f}")
+        st.metric("MAE (in-sample)", f"{mae_all:.6f}")
+        st.metric("RMSE (in-sample)", f"{rmse_all:.6f}")
+
+    # Gráfico: usamos el conjunto de prueba para mostrar real vs predicho
+    st.markdown("### Rendimientos logarítmicos en el conjunto de prueba")
+    fig, ax = plt.subplots(figsize=(8, 3))
+    ax.plot(y_test.values, label="Real", alpha=0.8)
+    ax.plot(y_pred_test, label="Predicho", alpha=0.8)
+    ax.set_title("Rendimientos logarítmicos: real vs predicho (test)")
+    ax.legend()
+    plt.tight_layout()
+    st.pyplot(fig)
 
     # 5.2 Predicción futura
     st.markdown("---")

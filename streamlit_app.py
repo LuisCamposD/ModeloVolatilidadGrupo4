@@ -166,7 +166,44 @@ if pagina == "Inicio y línea de tiempo":
     """)
 
     st.subheader("Problemática")
+    # ----------------------------------------------------------------
+    # TIMELINE INTERACTIVO (USANDO SLIDER)
+    # ----------------------------------------------------------------
+    st.markdown("---")
+    st.subheader("Timeline: Evolución del análisis de la volatilidad del tipo de cambio")
 
+    st.write(
+        "Mueve el slider para ver cómo, a lo largo de los años, ha evolucionado el análisis "
+        "de la volatilidad del tipo de cambio y su impacto en el área de Compras y Logística."
+    )
+
+    step = st.slider(
+        "Selecciona la etapa del timeline:",
+        min_value=1,
+        max_value=len(TIMELINE),
+        value=1,
+        step=1,
+        key="timeline_slider",
+    )
+
+    idx = step - 1
+    item = TIMELINE[idx]
+
+    st.subheader(item["titulo"])
+
+    st.image(
+        IMAGES[idx],
+        caption=CAPTIONS[idx],
+        use_container_width=True,
+    )
+
+    st.markdown(f"**Resumen:** {item['resumen']}")
+
+    st.markdown("**¿Qué pasa en esta etapa?**")
+    for bullet in item["bullets"]:
+        st.markdown(f"- {bullet}")
+
+    st.progress(idx / (len(TIMELINE) - 1))
     st.write("""
     Para áreas de **logística, finanzas y planificación**, la volatilidad del tipo de cambio es clave:
     impacta directamente en el costo de importaciones, contratos en dólares y cobertura de riesgos.
@@ -207,44 +244,7 @@ if pagina == "Inicio y línea de tiempo":
         - Periodos de mayor estabilidad.
         - Picos de volatilidad que pueden asociarse a shocks externos o internos.
         """)
-    # ----------------------------------------------------------------
-    # TIMELINE INTERACTIVO (USANDO SLIDER)
-    # ----------------------------------------------------------------
-    st.markdown("---")
-    st.subheader("Timeline: Evolución del análisis de la volatilidad del tipo de cambio")
 
-    st.write(
-        "Mueve el slider para ver cómo, a lo largo de los años, ha evolucionado el análisis "
-        "de la volatilidad del tipo de cambio y su impacto en el área de Compras y Logística."
-    )
-
-    step = st.slider(
-        "Selecciona la etapa del timeline:",
-        min_value=1,
-        max_value=len(TIMELINE),
-        value=1,
-        step=1,
-        key="timeline_slider",
-    )
-
-    idx = step - 1
-    item = TIMELINE[idx]
-
-    st.subheader(item["titulo"])
-
-    st.image(
-        IMAGES[idx],
-        caption=CAPTIONS[idx],
-        use_container_width=True,
-    )
-
-    st.markdown(f"**Resumen:** {item['resumen']}")
-
-    st.markdown("**¿Qué pasa en esta etapa?**")
-    for bullet in item["bullets"]:
-        st.markdown(f"- {bullet}")
-
-    st.progress(idx / (len(TIMELINE) - 1))
 
 # ---------- 4. Página: EDA ----------
 elif pagina == "EDA":

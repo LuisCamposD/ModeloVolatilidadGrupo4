@@ -19,11 +19,24 @@ def cargar_recursos():
     selected_vars = joblib.load("selected_vars_volatilidad.pkl")
     df = pd.read_csv("datos_tc_limpios.csv")
 
-    # Crear columna fecha si no existe
-    if "fecha" not in df.columns and "anio" in df.columns and "mes" in df.columns:
-        df["fecha"] = pd.to_datetime(
-            dict(year=df["anio"], month=df["mes"], day=1)
-        )
+       # Crear columna fecha si no existe
+    if "fecha" not in df.columns:
+        if "anio" in df.columns and "mes" in df.columns:
+            # Convertir nombre de mes en español a número
+            mapa_meses = {
+                "Ene": 1, "Feb": 2, "Mar": 3, "Abr": 4,
+                "May": 5, "Jun": 6, "Jul": 7, "Ago": 8,
+                "Set": 9, "Sep": 9, "Oct": 10, "Nov": 11, "Dic": 12
+            }
+            df_mes_num = df["mes"].map(mapa_meses)
+
+            df["fecha"] = pd.to_datetime(
+                dict(year=df["anio"], month=df_mes_num, day=1)
+            )
+        else:
+            # Fallback por si algún día cambian las columnas
+            df["fecha"] = pd.date_range(start="2000-01-01", periods=len(df), freq="M")
+
 
     # Crear rendimiento logarítmico para análisis y métricas
     df_mod = df.copy()

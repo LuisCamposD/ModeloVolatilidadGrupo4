@@ -5,6 +5,8 @@ import joblib
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler
 
 sns.set(style="whitegrid")
 
@@ -106,19 +108,17 @@ MAPA_MESES = {
     "Jul": 7, "Ago": 8, "Set": 9, "Sep": 9, "Oct": 10, "Nov": 11, "Dic": 12,
 }
 
-# ---------- 1. Cargar modelo, imputer, scaler, variables y datos ----------
+# ---------- 1. Cargar modelo, reconstruir imputer/scaler y datos ----------
 @st.cache_resource
 def cargar_recursos():
-    # Cargar artefactos entrenados en Colab
+    # Modelo entrenado
     modelo = joblib.load("gbr_mejor_modelo_tc.pkl")
     selected_vars = joblib.load("selected_vars_volatilidad.pkl")
-    imputer = joblib.load("imputer_volatilidad.pkl")
-    scaler = joblib.load("scaler_volatilidad.pkl")
 
-    # Cargar datos limpios (histórico)
+    # Datos históricos (para timeline, EDA y TC real)
     df = pd.read_csv("data_limpia.csv")
 
-    # ========== 1) Detectar columna de tipo de cambio (tc_col) ==========
+    # 1) Detectar columna de tipo de cambio
     posibles_tc = [
         "TC",
         "tc",
@@ -130,14 +130,11 @@ def cargar_recursos():
     ]
 
     tc_col = None
-
-    # Buscar por nombres exactos
     for col in posibles_tc:
         if col in df.columns:
             tc_col = col
             break
 
-    # Buscar por texto aproximado si no se encontró
     if tc_col is None:
         for col in df.columns:
             nombre = col.lower()
@@ -151,7 +148,7 @@ def cargar_recursos():
             f"Columnas disponibles: {list(df.columns)}"
         )
 
-    # ========== 2) Fecha y ordenamiento ==========
+    # 2) Fecha y ordenamiento
     if "fecha" not in df.columns:
         if "anio" in df.columns and "mes" in df.columns:
             df["mes_num"] = df["mes"].map(MAPA_MESES)
@@ -168,21 +165,31 @@ def cargar_recursos():
 
     df = df.sort_values("fecha").reset_index(drop=True)
 
-    # ========== 3) df_mod con Rendimientos_log desde datos_procesados ==========
+    # 3) df_mod con Rendimientos_log desde datos_procesados
     df_mod = pd.read_csv("datos_procesados.csv")
 
-    if "Rendimientos_log" in df_mod.columns:
-        df_mod = df_mod.dropna(subset=["Rendimientos_log"])
-    else:
-        # Si alguna vez necesitas calcularlo aquí:
+    if "Rendimientos_log" not in df_mod.columns:
         if tc_col not in df_mod.columns:
             raise KeyError(
-                f"'Rendimientos_log' no está en datos_procesados.csv y tampoco existe {tc_col} para calcularlo."
+                f"'Rendimientos_log' no está en datos_procesados.csv "
+                f"y tampoco existe {tc_col} para calcularlo."
             )
         df_mod["Rendimientos_log"] = np.log(
             df_mod[tc_col] / df_mod[tc_col].shift(1)
         )
-        df_mod = df_mod.dropna(subset=["Rendimientos_log"])
+
+    df_mod = df_mod.dropna(subset=["Rendimientos_log"])
+
+    # 4) Reconstruir imputer y scaler con el MISMO esquema del Colab
+    X = df_mod[selected_vars]
+    train_size = int(len(X) * 0.8)
+    X_train = X.iloc[:train_size]
+
+    imputer = SimpleImputer(strategy="median")
+    X_train_imp = imputer.fit_transform(X_train)
+
+    scaler = StandardScaler()
+    scaler.fit(X_train_imp)
 
     return modelo, imputer, scaler, selected_vars, df, df_mod, tc_col
 
@@ -222,9 +229,7 @@ if pagina == "Inicio y línea de tiempo":
       y anticipar movimientos del tipo de cambio.
     """)
 
-    # ----------------------------------------------------------------
-    # TIMELINE INTERACTIVO
-    # ----------------------------------------------------------------
+    # TIMELINE
     st.markdown("---")
     st.subheader("Timeline: Evolución del análisis de la volatilidad del tipo de cambio")
 
@@ -254,16 +259,13 @@ if pagina == "Inicio y línea de tiempo":
     )
 
     st.markdown(f"**Resumen:** {item['resumen']}")
-
     st.markdown("**¿Qué pasa en esta etapa?**")
     for bullet in item["bullets"]:
         st.markdown(f"- {bullet}")
 
     st.progress(idx / (len(TIMELINE) - 1))
 
-    # ----------------------------------------------------------------
-    # HISTÓRICO DEL TIPO DE CAMBIO
-    # ----------------------------------------------------------------
+    # HISTÓRICO TC
     st.markdown("---")
     st.subheader("Histórico del tipo de cambio")
 
@@ -287,7 +289,6 @@ if pagina == "Inicio y línea de tiempo":
         st.write(f"- TC mínimo: {df_tc[tc_col].min():.4f}")
         st.write(f"- TC máximo: {df_tc[tc_col].max():.4f}")
         st.write(f"- TC promedio: {df_tc[tc_col].mean():.4f}")
-
         st.info("""
         La línea de tiempo nos permite ubicar:
         - Periodos de mayor estabilidad.
@@ -317,7 +318,7 @@ elif pagina == "EDA":
     st.pyplot(fig)
 
     st.markdown("---")
-    st.subheader("Distribución del tipo de cambio (columna TC original)")
+    st.subheader("Distribución del tipo de cambio")
 
     fig, ax = plt.subplots(figsize=(5, 3))
     sns.boxplot(x=df[tc_col], ax=ax)
@@ -345,9 +346,7 @@ elif pagina == "EDA":
 elif pagina == "Modelo y predicciones":
     st.title("Modelo de Volatilidad y Predicciones")
 
-    # =========================
-    # 5.1 Performance del modelo
-    # =========================
+    # 5.1 Performance
     st.subheader("Performance del modelo en el conjunto de prueba")
 
     X = df_mod[selected_vars]
@@ -359,7 +358,6 @@ elif pagina == "Modelo y predicciones":
     y_train = y.iloc[:train_size]
     y_test = y.iloc[train_size:]
 
-    # Imputar + escalar + predecir
     X_test_imp = imputer.transform(X_test)
     X_test_scaled = scaler.transform(X_test_imp)
     y_pred = modelo.predict(X_test_scaled)
@@ -373,7 +371,6 @@ elif pagina == "Modelo y predicciones":
         st.metric("R2", f"{r2:.4f}")
         st.metric("MAE", f"{mae:.6f}")
         st.metric("RMSE", f"{rmse:.6f}")
-
     with col2:
         fig, ax = plt.subplots(figsize=(8, 3))
         ax.plot(y_test.values, label="Real", alpha=0.8)
@@ -383,9 +380,7 @@ elif pagina == "Modelo y predicciones":
         plt.tight_layout()
         st.pyplot(fig)
 
-    # =========================
     # 5.2 Predicción multi-mes
-    # =========================
     st.markdown("---")
     st.subheader("Predicción de varios meses hacia adelante")
 
@@ -425,11 +420,9 @@ elif pagina == "Modelo y predicciones":
         num_meses = st.slider("Número de meses a predecir", 1, 24, 5)
 
     if st.button("Calcular predicción"):
-        # Último registro de features y TC
         ultimo_X = df_mod[selected_vars].iloc[-1].copy()
         ultimo_tc = df_ordenado[tc_col].iloc[-1]
 
-        # Generar lista de (año, mes_num) futuros
         meses_futuro = []
         mes_actual = mes_inicio
         anio_actual = int(anio_input)
@@ -443,19 +436,16 @@ elif pagina == "Modelo y predicciones":
 
         df_futuro = pd.DataFrame(meses_futuro, columns=["anio", "mes_num"])
 
-        # Construir features futuras
         for col in selected_vars:
             if col == "anio":
                 df_futuro[col] = df_futuro["anio"]
             else:
                 df_futuro[col] = ultimo_X[col]
 
-        # Imputar + escalar + predecir
         X_fut_imp = imputer.transform(df_futuro[selected_vars])
         X_fut_scaled = scaler.transform(X_fut_imp)
         rendimientos_pred = modelo.predict(X_fut_scaled)
 
-        # Reconstrucción del tipo de cambio
         tc_pred = []
         tc_actual = ultimo_tc
         for r in rendimientos_pred:
@@ -464,15 +454,12 @@ elif pagina == "Modelo y predicciones":
 
         df_futuro["TC_predicho"] = tc_pred
 
-        # Mapear número de mes a nombre
         mes_dict_inv = {v: k for k, v in MAPA_MESES.items()}
         df_futuro["mes"] = df_futuro["mes_num"].map(mes_dict_inv)
 
-        # Mostrar tabla de predicciones
         st.write("### Predicciones futuras")
         st.dataframe(df_futuro[["anio", "mes", "TC_predicho"]])
 
-        # Gráfico histórico + predicho
         fig, ax = plt.subplots(figsize=(10, 4))
         x_hist = np.arange(len(df_ordenado))
         ax.plot(x_hist, df_ordenado[tc_col], label="TC real (histórico)")

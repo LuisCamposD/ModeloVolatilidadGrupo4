@@ -341,202 +341,158 @@ elif pagina == "EDA":
 
 # ---------- 5. Página: Modelo y predicciones ----------
 elif pagina == "Modelo y predicciones":
-    st.title("Modelo de Volatilidad y Predicciones")
+   # ---------- Página: Modelo y predicciones ----------
+st.title("Modelo de Volatilidad y Predicciones")
 
-    # =========================
-    # 5.1 Performance del modelo
-    # =========================
-    st.subheader("Performance del modelo en el conjunto de prueba")
+# =========================
+# 5.1 Performance del modelo
+# =========================
+st.subheader("Performance del modelo en el conjunto de prueba")
 
-    X = df_mod[selected_vars]
-    y = df_mod["Rendimientos_log"]
+X = df_mod[selected_vars]
+y = df_mod["Rendimientos_log"]
 
-    train_size = int(len(X) * 0.8)
-    X_train = X.iloc[:train_size]
-    X_test = X.iloc[train_size:]
-    y_train = y.iloc[:train_size]
-    y_test = y.iloc[train_size:]
+train_size = int(len(X) * 0.8)
+X_train = X.iloc[:train_size]
+X_test = X.iloc[train_size:]
+y_train = y.iloc[:train_size]
+y_test = y.iloc[train_size:]
 
-    # MISMO PIPELINE QUE EN COLAB: imputar + escalar + predecir
-    X_test_imp = imputer.transform(X_test)
-    X_test_scaled = scaler.transform(X_test_imp)
-    y_pred = modelo.predict(X_test_scaled)
+# Imputar + escalar + predecir
+X_test_imp = imputer.transform(X_test)
+X_test_scaled = scaler.transform(X_test_imp)
+y_pred = modelo.predict(X_test_scaled)
 
-    mae = mean_absolute_error(y_test, y_pred)
-    rmse = np.sqrt(mean_squared_error(y_test, y_pred))
-    r2 = r2_score(y_test, y_pred)
+mae = mean_absolute_error(y_test, y_pred)
+rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+r2 = r2_score(y_test, y_pred)
 
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric("R2", f"{r2:.4f}")
-        st.metric("MAE", f"{mae:.6f}")
-        st.metric("RMSE", f"{rmse:.6f}")
+col1, col2 = st.columns(2)
+with col1:
+    st.metric("R2", f"{r2:.4f}")
+    st.metric("MAE", f"{mae:.6f}")
+    st.metric("RMSE", f"{rmse:.6f}")
 
-    with col2:
-        fig, ax = plt.subplots(figsize=(8, 3))
-        ax.plot(y_test.values, label="Real", alpha=0.8)
-        ax.plot(y_pred, label="Predicho", alpha=0.8)
-        ax.set_title("Rendimientos logarítmicos: real vs predicho")
-        ax.legend()
-        plt.tight_layout()
-        st.pyplot(fig)
+with col2:
+    fig, ax = plt.subplots(figsize=(8, 3))
+    ax.plot(y_test.values, label="Real", alpha=0.8)
+    ax.plot(y_pred, label="Predicho", alpha=0.8)
+    ax.set_title("Rendimientos logarítmicos: real vs predicho")
+    ax.legend()
+    plt.tight_layout()
+    st.pyplot(fig)
 
-    # =========================
-    # 5.2 Simulador 1 período
-    # =========================
-    st.markdown("---")
-    st.subheader("Simulador de predicciones (1 período)")
 
-    st.write("""
-    Ajusta las variables explicativas y el modelo estimará el **rendimiento logarítmico** del TC.
-    Luego proyectamos un TC esperado a partir del último valor observado.
-    """)
+# =========================
+# 5.2 Predicción multi-mes por inputs de año y mes
+# =========================
+st.markdown("---")
+st.subheader("Predicción de varios meses hacia adelante")
 
-    desc = df_mod[selected_vars].describe()
+st.write("""
+Selecciona el *año y el mes de inicio* para proyectar el tipo de cambio varios meses hacia adelante.
+El modelo usará el último registro de datos como base y calculará el TC esperado.
+""")
 
-    with st.form("form_pred_un_paso"):
-        entrada = {}
-        for col in selected_vars:
-            min_val = float(desc.loc["min", col])
-            max_val = float(desc.loc["max", col])
-            mean_val = float(desc.loc["mean", col])
+# Datos ordenados por fecha
+df_ordenado = df.sort_values("fecha").reset_index(drop=True)
 
-            entrada[col] = st.slider(
-                col,
-                min_value=min_val,
-                max_value=max_val,
-                value=mean_val,
-            )
+# Lista de meses para el selectbox
+meses_nombres = sorted(
+    list({m for m in df_ordenado["mes"].unique()} | set(MAPA_MESES.keys())),
+    key=lambda m: MAPA_MESES.get(m, 13),
+)
 
-        enviado = st.form_submit_button("Calcular predicción")
+ultimo_anio = int(df_ordenado["anio"].iloc[-1])
+ultimo_mes_nombre = df_ordenado["mes"].iloc[-1]
+idx_mes_default = meses_nombres.index(ultimo_mes_nombre)
 
-    if enviado:
-        x_new = pd.DataFrame([entrada])
-        x_new_imp = imputer.transform(x_new)
-        x_new_scaled = scaler.transform(x_new_imp)
+col_a, col_b, col_c = st.columns(3)
+with col_a:
+    anio_input = st.number_input(
+        "Año de inicio de la predicción",
+        min_value=ultimo_anio,
+        max_value=ultimo_anio + 10,
+        value=ultimo_anio,
+        step=1,
+    )
+with col_b:
+    mes_nombre = st.selectbox(
+        "Mes de inicio",
+        options=meses_nombres,
+        index=idx_mes_default,
+    )
+    mes_inicio = MAPA_MESES[mes_nombre]
+with col_c:
+    num_meses = st.slider("Número de meses a predecir", 1, 24, 5)
 
-        rend_log_pred = modelo.predict(x_new_scaled)[0]
+if st.button("Calcular predicción"):
+    # Último registro de features y TC
+    ultimo_X = df_mod[selected_vars].iloc[-1].copy()
+    ultimo_tc = df_ordenado["TC"].iloc[-1]
 
-        st.write(f"**Rendimiento logarítmico predicho:** {rend_log_pred:.6f}")
+    # Generar lista de (año, mes_num) futuros
+    meses_futuro = []
+    mes_actual = mes_inicio
+    anio_actual = int(anio_input)
 
-        # Usamos la columna de TC detectada
-        ultimo_tc = df_mod[tc_col].iloc[-1]
-        tc_esperado = ultimo_tc * np.exp(rend_log_pred)
+    for _ in range(num_meses):
+        meses_futuro.append((anio_actual, mes_actual))
+        mes_actual += 1
+        if mes_actual > 12:
+            mes_actual = 1
+            anio_actual += 1
 
-        st.write(f"Último tipo de cambio observado: **{ultimo_tc:.4f}**")
-        st.write(f"Tipo de cambio estimado para el siguiente período: **{tc_esperado:.4f}**")
+    df_futuro = pd.DataFrame(meses_futuro, columns=["anio", "mes_num"])
 
-        st.success("Predicción calculada con éxito.")
+    # Construir features futuras (mantener últimos valores de las demás variables)
+    for col in selected_vars:
+        if col == "anio":
+            df_futuro[col] = df_futuro["anio"]
+        else:
+            df_futuro[col] = ultimo_X[col]
 
-    # =========================
-    # 5.3 Predicción multi-mes (como en el Colab)
-    # =========================
-    st.markdown("---")
-    st.subheader("Predicción de varios meses hacia adelante")
+    # Imputar + escalar + predecir
+    X_fut_imp = imputer.transform(df_futuro[selected_vars])
+    X_fut_scaled = scaler.transform(X_fut_imp)
+    rendimientos_pred = modelo.predict(X_fut_scaled)
 
-    st.write("""
-    Aquí proyectamos el tipo de cambio para varios meses hacia adelante, 
-    usando como base el último valor observado y manteniendo constantes 
-    las demás variables explicativas, replicando la lógica del Colab.
-    """)
+    # Reconstrucción del tipo de cambio
+    tc_pred = []
+    tc_actual = ultimo_tc
+    for r in rendimientos_pred:
+        tc_actual = tc_actual * np.exp(r)
+        tc_pred.append(tc_actual)
 
-    df_ordenado = df.sort_values("fecha").reset_index(drop=True)
+    df_futuro["TC_predicho"] = tc_pred
 
-    # Lista de meses para el selectbox
-    meses_nombres = sorted(
-        list({m for m in df_ordenado["mes"].unique()} | set(MAPA_MESES.keys())),
-        key=lambda m: MAPA_MESES.get(m, 13),
+    # Mapear número de mes a nombre
+    mes_dict_inv = {v: k for k, v in MAPA_MESES.items()}
+    df_futuro["mes"] = df_futuro["mes_num"].map(mes_dict_inv)
+
+    # Mostrar tabla de predicciones
+    st.write("### Predicciones futuras")
+    st.dataframe(df_futuro[["anio", "mes", "TC_predicho"]])
+
+    # Gráfico histórico + predicho
+    fig, ax = plt.subplots(figsize=(10, 4))
+    x_hist = np.arange(len(df_ordenado))
+    ax.plot(x_hist, df_ordenado["TC"], label="TC real (histórico)")
+
+    x_fut = np.arange(len(df_ordenado), len(df_ordenado) + num_meses)
+    ax.plot(
+        x_fut,
+        df_futuro["TC_predicho"],
+        label=f"TC predicho ({num_meses} meses desde {mes_nombre}/{int(anio_input)})",
+        marker="o",
+        color="red",
     )
 
-    ultimo_anio = int(df_ordenado["anio"].iloc[-1])
-    ultimo_mes_nombre = df_ordenado["mes"].iloc[-1]
-    idx_mes_default = meses_nombres.index(ultimo_mes_nombre)
-
-    col_a, col_b, col_c = st.columns(3)
-    with col_a:
-        anio_input = st.number_input(
-            "Año de inicio de la predicción",
-            min_value=ultimo_anio,
-            max_value=ultimo_anio + 10,
-            value=ultimo_anio,
-            step=1,
-        )
-    with col_b:
-        mes_nombre = st.selectbox(
-            "Mes de inicio",
-            options=meses_nombres,
-            index=idx_mes_default,
-        )
-        mes_inicio = MAPA_MESES[mes_nombre]
-    with col_c:
-        num_meses = st.slider("Número de meses a predecir", 1, 24, 5)
-
-    if st.button("Calcular predicción multi-mes"):
-        # Último registro de features y último TC
-        ultimo_X = df_mod[selected_vars].iloc[-1].copy()
-        ultimo_tc = df_ordenado[tc_col].iloc[-1]
-
-        # Generar meses futuros
-        meses_futuro = []
-        mes_actual = mes_inicio
-        anio_actual = int(anio_input)
-
-        for _ in range(num_meses):
-            meses_futuro.append((anio_actual, mes_actual))
-            mes_actual += 1
-            if mes_actual > 12:
-                mes_actual = 1
-                anio_actual += 1
-
-        df_futuro = pd.DataFrame(meses_futuro, columns=["anio", "mes_num"])
-
-        # Construir features futuras
-        for col in selected_vars:
-            if col == "anio":
-                df_futuro[col] = df_futuro["anio"]
-            else:
-                df_futuro[col] = ultimo_X[col]
-
-        X_fut_imp = imputer.transform(df_futuro[selected_vars])
-        X_fut_scaled = scaler.transform(X_fut_imp)
-        rendimientos_pred = modelo.predict(X_fut_scaled)
-
-        # Reconstrucción del tipo de cambio
-        tc_pred = []
-        tc_actual = ultimo_tc
-        for r in rendimientos_pred:
-            tc_actual = tc_actual * np.exp(r)
-            tc_pred.append(tc_actual)
-
-        df_futuro["TC_predicho"] = tc_pred
-
-        # Mapear número de mes a nombre
-        mes_dict_inv = {v: k for k, v in MAPA_MESES.items()}
-        df_futuro["mes"] = df_futuro["mes_num"].map(mes_dict_inv)
-
-        st.write("### Predicciones futuras")
-        st.dataframe(df_futuro[["anio", "mes", "TC_predicho"]])
-
-        # Gráfico histórico + predicho (como en el Colab)
-        fig, ax = plt.subplots(figsize=(10, 4))
-
-        x_hist = np.arange(len(df_ordenado))
-        ax.plot(x_hist, df_ordenado[tc_col], label="TC real (histórico)")
-
-        x_fut = np.arange(len(df_ordenado), len(df_ordenado) + num_meses)
-        ax.plot(
-            x_fut,
-            df_futuro["TC_predicho"],
-            label=f"TC predicho ({num_meses} meses desde {mes_nombre}/{int(anio_input)})",
-            marker="o",
-            color="red",
-        )
-
-        ax.set_title(
-            f"Predicción del Tipo de Cambio - {num_meses} meses desde {mes_nombre}/{int(anio_input)}"
-        )
-        ax.set_xlabel("Meses")
-        ax.set_ylabel("Tipo de cambio (S/ por US$)")
-        ax.legend()
-        plt.tight_layout()
-        st.pyplot(fig)
+    ax.set_title(
+        f"Predicción del Tipo de Cambio - {num_meses} meses desde {mes_nombre}/{int(anio_input)}"
+    )
+    ax.set_xlabel("Meses")
+    ax.set_ylabel("Tipo de cambio (S/ por US$)")
+    ax.legend()
+    plt.tight_layout()
+    st.pyplot(fig)

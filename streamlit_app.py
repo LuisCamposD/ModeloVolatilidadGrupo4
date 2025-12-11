@@ -194,7 +194,7 @@ def cargar_recursos():
     return modelo, imputer, scaler, selected_vars, df, df_mod, tc_col
 
 
-modelo, imputer, scaler, selected_vars, df, df_mod, tc_col = cargar_recursos()
+modelo, imputer, scaler, selected_vars, df2, df_mod, tc_col = cargar_recursos()
 
 # ---------- 2. Sidebar: navegación ----------
 st.sidebar.title("Menú")

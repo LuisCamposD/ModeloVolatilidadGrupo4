@@ -110,11 +110,13 @@ MAPA_MESES = {
 }
 
 # ---------- 1. Cargar modelo, variables, datos y reentrenar imputer/scaler ----------
-@st.cache_resource
+@@st.cache_resource
 def cargar_recursos():
-    # Cargar artefactos entrenados en Colab (solo modelo y variables)
+    # 1) Cargamos todo lo entrenado en Colab
     modelo = joblib.load("gbr_mejor_modelo_tc.pkl")
     selected_vars = joblib.load("selected_vars_volatilidad.pkl")
+    imputer = joblib.load("imputer_volatilidad.pkl")
+    scaler = joblib.load("scaler_volatilidad.pkl")
 
     # CSV real del repo
     df = pd.read_csv("datos_tc_limpios.csv")
@@ -168,20 +170,8 @@ def cargar_recursos():
 
     # ========== 3) Rendimientos logarítmicos ==========
     df_mod = df.copy()
-    df_mod["Rendimientos_log"] = np.log(
-        df_mod[tc_col] / df_mod[tc_col].shift(1)
-    )
+    df_mod["Rendimientos_log"] = np.log(df_mod[tc_col] / df_mod[tc_col].shift(1))
     df_mod = df_mod.dropna(subset=["Rendimientos_log"])
-
-    # ========== 4) Reentrenar imputer y scaler con las variables seleccionadas ==========
-    X_full = df_mod[selected_vars].copy()
-
-    imputer = SimpleImputer(strategy="median")
-    X_imp = imputer.fit_transform(X_full)
-
-    scaler = StandardScaler()
-    scaler.fit(X_imp)
-
     return modelo, imputer, scaler, selected_vars, df, df_mod, tc_col
 
 

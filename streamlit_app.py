@@ -5,6 +5,8 @@ import joblib
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.impute import SimpleImputer
+
 
 st.set_page_config(
     page_title="Volatilidad del Tipo de Cambio",
@@ -14,15 +16,16 @@ st.set_page_config(
 # ---------- 1. Cargar modelo, imputer, variables y datos ----------
 @st.cache_resource
 def cargar_recursos():
+    # Cargar modelo entrenado y variables seleccionadas
     modelo = joblib.load("gbr_mejor_modelo_tc.pkl")
-    imputer = joblib.load("imputer_volatilidad.pkl")
     selected_vars = joblib.load("selected_vars_volatilidad.pkl")
+
+    # Cargar datos
     df = pd.read_csv("datos_tc_limpios.csv")
 
-       # Crear columna fecha si no existe
+    # Crear columna fecha si no existe
     if "fecha" not in df.columns:
         if "anio" in df.columns and "mes" in df.columns:
-            # Convertir nombre de mes en español a número
             mapa_meses = {
                 "Ene": 1, "Feb": 2, "Mar": 3, "Abr": 4,
                 "May": 5, "Jun": 6, "Jul": 7, "Ago": 8,
@@ -34,16 +37,23 @@ def cargar_recursos():
                 dict(year=df["anio"], month=df_mes_num, day=1)
             )
         else:
-            # Fallback por si algún día cambian las columnas
             df["fecha"] = pd.date_range(start="2000-01-01", periods=len(df), freq="M")
-
 
     # Crear rendimiento logarítmico para análisis y métricas
     df_mod = df.copy()
     df_mod["Rendimientos_log"] = np.log(df_mod["TC"] / df_mod["TC"].shift(1))
     df_mod = df_mod.dropna(subset=["Rendimientos_log"])
 
+    # === Aquí re-entrenamos el imputador con los mismos datos que en Colab ===
+    X = df_mod[selected_vars]
+    train_size = int(len(X) * 0.8)
+    X_train = X.iloc[:train_size]
+
+    imputer = SimpleImputer(strategy="median")
+    imputer.fit(X_train)
+
     return modelo, imputer, selected_vars, df, df_mod
+
 
 modelo, imputer, selected_vars, df, df_mod = cargar_recursos()
 

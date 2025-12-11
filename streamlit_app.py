@@ -119,7 +119,43 @@ def cargar_recursos():
     # Cargar datos limpios
     df = pd.read_csv("datos_tc_limpios.csv")
 
-    # Crear columna fecha si no existe
+    # -------- 1) Detectar la columna de tipo de cambio --------
+    posibles_tc = [
+        "TC",
+        "tc",
+        "TC_venta",
+        "tc_venta",
+        "Tipo de cambio - TC Sistema bancario SBS (S/ por US$) - Venta",
+        "Tipo de cambio - TC Sistema bancario SBS (S/ por US$) - Venta ",
+        "Tipo_de_cambio",
+    ]
+
+    tc_col = None
+    # Buscar por nombres exactos
+    for col in posibles_tc:
+        if col in df.columns:
+            tc_col = col
+            break
+
+    # Si no lo encontró, buscar por texto aproximado
+    if tc_col is None:
+        for col in df.columns:
+            nombre = col.lower()
+            if "tipo de cambio" in nombre or nombre == "tc":
+                tc_col = col
+                break
+
+    if tc_col is None:
+        raise KeyError(
+            f"No se encontró columna de Tipo de Cambio en el CSV. "
+            f"Columnas disponibles: {list(df.columns)}"
+        )
+
+    # Crear alias estándar 'TC' para el resto del código
+    if tc_col != "TC":
+        df["TC"] = df[tc_col]
+
+    # -------- 2) Crear columna fecha --------
     if "fecha" not in df.columns:
         if "anio" in df.columns and "mes" in df.columns:
             df["mes_num"] = df["mes"].map(MAPA_MESES)
@@ -129,22 +165,22 @@ def cargar_recursos():
         else:
             df["fecha"] = pd.date_range(start="2000-01-01", periods=len(df), freq="M")
     else:
-        # Si ya existe, aseguramos tipo datetime
         df["fecha"] = pd.to_datetime(df["fecha"])
 
-    # Asegurar columna mes_num
+    # Asegurar mes_num
     if "mes_num" not in df.columns and "mes" in df.columns:
         df["mes_num"] = df["mes"].map(MAPA_MESES)
 
     # Ordenar por fecha
     df = df.sort_values("fecha").reset_index(drop=True)
 
-    # Crear rendimientos logarítmicos
+    # -------- 3) Crear rendimientos logarítmicos --------
     df_mod = df.copy()
     df_mod["Rendimientos_log"] = np.log(df_mod["TC"] / df_mod["TC"].shift(1))
     df_mod = df_mod.dropna(subset=["Rendimientos_log"])
 
     return modelo, imputer, scaler, selected_vars, df, df_mod
+
 
 
 modelo, imputer, scaler, selected_vars, df, df_mod = cargar_recursos()

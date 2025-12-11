@@ -92,7 +92,7 @@ if pagina == "Inicio y línea de tiempo":
     """)
 
     st.markdown("---")
-    st.subheader("Línea de tiempo del tipo de cambio")
+    st.subheader("Histórico del tipo de cambio")
 
     df_tc = df.sort_values("fecha").copy()
 

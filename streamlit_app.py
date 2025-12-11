@@ -116,7 +116,7 @@ def cargar_recursos():
     selected_vars = joblib.load("selected_vars_volatilidad.pkl")
 
     # Datos históricos (para timeline, EDA y TC real)
-    df = pd.read_csv("data_limpia.csv")
+    df2 = pd.read_csv("data_limpia.csv")
 
     # 1) Detectar columna de tipo de cambio
     posibles_tc = [

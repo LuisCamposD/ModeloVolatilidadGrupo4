@@ -5,8 +5,6 @@ import joblib
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import StandardScaler
 
 sns.set(style="whitegrid")
 
@@ -108,17 +106,19 @@ MAPA_MESES = {
     "Jul": 7, "Ago": 8, "Set": 9, "Sep": 9, "Oct": 10, "Nov": 11, "Dic": 12,
 }
 
-# ---------- 1. Cargar modelo, reconstruir imputer/scaler y datos ----------
+# ---------- 1. Cargar modelo, imputer, scaler, variables y datos ----------
 @st.cache_resource
 def cargar_recursos():
-    # Modelo entrenado
+    # Cargar artefactos entrenados en Colab
     modelo = joblib.load("gbr_mejor_modelo_tc.pkl")
     selected_vars = joblib.load("selected_vars_volatilidad.pkl")
+    imputer = joblib.load("imputer_volatilidad.pkl")
+    scaler = joblib.load("scaler_volatilidad.pkl")
 
-    # Datos históricos (para timeline, EDA y TC real)
-    df2 = pd.read_csv("data_limpia.csv")
+    # Cargar datos limpios
+    df = pd.read_csv("data_limpia.csv")
 
-    # 1) Detectar columna de tipo de cambio
+    # ========== 1) Detectar columna de tipo de cambio (tc_col) ==========
     posibles_tc = [
         "TC",
         "tc",
@@ -130,71 +130,61 @@ def cargar_recursos():
     ]
 
     tc_col = None
+    # Buscar por nombres exactos
     for col in posibles_tc:
-        if col in df2.columns:
+        if col in df.columns:
             tc_col = col
             break
 
+    # Buscar por texto aproximado si no se encontró
     if tc_col is None:
-        for col in df2.columns:
+        for col in df.columns:
             nombre = col.lower()
             if "tipo de cambio" in nombre or nombre == "tc":
                 tc_col = col
                 break
 
     if tc_col is None:
+        # Si llegamos aquí, no sabemos cuál es el tipo de cambio
         raise KeyError(
-            f"No se encontró columna de Tipo de Cambio en data_limpia.csv. "
-            f"Columnas disponibles: {list(df2.columns)}"
+            f"No se encontró columna de Tipo de Cambio en el CSV. "
+            f"Columnas disponibles: {list(df.columns)}"
         )
 
-    # 2) Fecha y ordenamiento
-    if "fecha" not in df2.columns:
-        if "anio" in df2.columns and "mes" in df2.columns:
-            df2["mes_num"] = df2["mes"].map(MAPA_MESES)
-            df2["fecha"] = pd.to_datetime(
+    # ========== 2) Fecha y ordenamiento ==========
+    if "fecha" not in df.columns:
+        if "anio" in df.columns and "mes" in df.columns:
+            df["mes_num"] = df["mes"].map(MAPA_MESES)
+            df["fecha"] = pd.to_datetime(
                 dict(year=df["anio"], month=df["mes_num"], day=1)
             )
         else:
-            df2["fecha"] = pd.date_range(start="2000-01-01", periods=len(df2), freq="M")
+            df["fecha"] = pd.date_range(start="2000-01-01", periods=len(df), freq="M")
     else:
-        df2["fecha"] = pd.to_datetime(df2["fecha"])
+        df["fecha"] = pd.to_datetime(df["fecha"])
 
-    if "mes_num" not in df2.columns and "mes" in df2.columns:
-        df2["mes_num"] = df2["mes"].map(MAPA_MESES)
+    if "mes_num" not in df.columns and "mes" in df.columns:
+        df["mes_num"] = df["mes"].map(MAPA_MESES)
 
     df = df.sort_values("fecha").reset_index(drop=True)
 
-    # 3) df_mod con Rendimientos_log desde datos_procesados
+    # ========== 3) Rendimientos logarítmicos ==========
     df_mod = pd.read_csv("datos_procesados.csv")
 
-    if "Rendimientos_log" not in df_mod.columns:
-        if tc_col not in df_mod.columns:
-            raise KeyError(
-                f"'Rendimientos_log' no está en datos_procesados.csv "
-                f"y tampoco existe {tc_col} para calcularlo."
-            )
+    if "Rendimientos_log" in df_mod.columns:
+        # Si ya lo calculaste en el Colab y lo guardaste en el CSV
+        df_mod = df_mod.dropna(subset=["Rendimientos_log"])
+    else:
+        # Si no existe, lo calculamos usando la columna de TC detectada
         df_mod["Rendimientos_log"] = np.log(
             df_mod[tc_col] / df_mod[tc_col].shift(1)
         )
+        df_mod = df_mod.dropna(subset=["Rendimientos_log"])
 
-    df_mod = df_mod.dropna(subset=["Rendimientos_log"])
-
-    # 4) Reconstruir imputer y scaler con el MISMO esquema del Colab
-    X = df_mod[selected_vars]
-    train_size = int(len(X) * 0.8)
-    X_train = X.iloc[:train_size]
-
-    imputer = SimpleImputer(strategy="median")
-    X_train_imp = imputer.fit_transform(X_train)
-
-    scaler = StandardScaler()
-    scaler.fit(X_train_imp)
-
-    return modelo, imputer, scaler, selected_vars, df2, df_mod, tc_col
+    return modelo, imputer, scaler, selected_vars, df, df_mod, tc_col
 
 
-modelo, imputer, scaler, selected_vars, df2, df_mod, tc_col = cargar_recursos()
+modelo, imputer, scaler, selected_vars, df, df_mod, tc_col = cargar_recursos()
 
 # ---------- 2. Sidebar: navegación ----------
 st.sidebar.title("Menú")
@@ -229,7 +219,9 @@ if pagina == "Inicio y línea de tiempo":
       y anticipar movimientos del tipo de cambio.
     """)
 
-    # TIMELINE
+    # ----------------------------------------------------------------
+    # TIMELINE INTERACTIVO
+    # ----------------------------------------------------------------
     st.markdown("---")
     st.subheader("Timeline: Evolución del análisis de la volatilidad del tipo de cambio")
 
@@ -259,13 +251,16 @@ if pagina == "Inicio y línea de tiempo":
     )
 
     st.markdown(f"**Resumen:** {item['resumen']}")
+
     st.markdown("**¿Qué pasa en esta etapa?**")
     for bullet in item["bullets"]:
         st.markdown(f"- {bullet}")
 
     st.progress(idx / (len(TIMELINE) - 1))
 
-    # HISTÓRICO TC
+    # ----------------------------------------------------------------
+    # HISTÓRICO DEL TIPO DE CAMBIO
+    # ----------------------------------------------------------------
     st.markdown("---")
     st.subheader("Histórico del tipo de cambio")
 
@@ -289,11 +284,13 @@ if pagina == "Inicio y línea de tiempo":
         st.write(f"- TC mínimo: {df_tc[tc_col].min():.4f}")
         st.write(f"- TC máximo: {df_tc[tc_col].max():.4f}")
         st.write(f"- TC promedio: {df_tc[tc_col].mean():.4f}")
+
         st.info("""
         La línea de tiempo nos permite ubicar:
         - Periodos de mayor estabilidad.
         - Picos de volatilidad que pueden asociarse a shocks externos o internos.
         """)
+
 
 # ---------- 4. Página: EDA ----------
 elif pagina == "EDA":
@@ -318,7 +315,7 @@ elif pagina == "EDA":
     st.pyplot(fig)
 
     st.markdown("---")
-    st.subheader("Distribución del tipo de cambio")
+    st.subheader("Distribución del tipo de cambio (columna TC original)")
 
     fig, ax = plt.subplots(figsize=(5, 3))
     sns.boxplot(x=df[tc_col], ax=ax)
@@ -344,37 +341,38 @@ elif pagina == "EDA":
 
 # ---------- 5. Página: Modelo y predicciones ----------
 elif pagina == "Modelo y predicciones":
+   # ---------- Página: Modelo y predicciones ----------
     st.title("Modelo de Volatilidad y Predicciones")
 
-    # =========================
-    # 5.1 Performance del modelo (igual que en Colab)
-    # =========================
+# =========================
+# 5.1 Performance del modelo
+# =========================
     st.subheader("Performance del modelo en el conjunto de prueba")
-
+    
     X = df_mod[selected_vars]
     y = df_mod["Rendimientos_log"]
-
+    
     train_size = int(len(X) * 0.8)
     X_train = X.iloc[:train_size]
     X_test = X.iloc[train_size:]
     y_train = y.iloc[:train_size]
     y_test = y.iloc[train_size:]
-
+    
     # Imputar + escalar + predecir
     X_test_imp = imputer.transform(X_test)
     X_test_scaled = scaler.transform(X_test_imp)
     y_pred = modelo.predict(X_test_scaled)
-
+    
     mae = mean_absolute_error(y_test, y_pred)
     rmse = np.sqrt(mean_squared_error(y_test, y_pred))
     r2 = r2_score(y_test, y_pred)
-
+    
     col1, col2 = st.columns(2)
     with col1:
         st.metric("R2", f"{r2:.4f}")
         st.metric("MAE", f"{mae:.6f}")
         st.metric("RMSE", f"{rmse:.6f}")
-
+    
     with col2:
         fig, ax = plt.subplots(figsize=(8, 3))
         ax.plot(y_test.values, label="Real", alpha=0.8)
@@ -383,35 +381,32 @@ elif pagina == "Modelo y predicciones":
         ax.legend()
         plt.tight_layout()
         st.pyplot(fig)
-
+    
+    
     # =========================
-    # 5.2 Predicción multi-mes (MISMA LÓGICA QUE EN EL COLAB)
+    # 5.2 Predicción multi-mes por inputs de año y mes
     # =========================
     st.markdown("---")
     st.subheader("Predicción de varios meses hacia adelante")
-
+    
     st.write("""
-    Selecciona el **año y mes de inicio** para proyectar el tipo de cambio varios meses hacia adelante.
-    El modelo usa el **último registro histórico** como base y reconstruye el TC predicho
-    tal como lo haces en el Colab.
+    Selecciona el *año y el mes de inicio* para proyectar el tipo de cambio varios meses hacia adelante.
+    El modelo usará el último registro de datos como base y calculará el TC esperado.
     """)
-
-    # Datos ordenados por año y mes (igual que en el Colab)
-    if "mes_num" not in df.columns and "mes" in df.columns:
-        df["mes_num"] = df["mes"].map(MAPA_MESES)
-
-    df_ordenado = df.sort_values(["anio", "mes_num"]).reset_index(drop=True)
-
-    # Lista de meses disponibles (para el combo)
+    
+    # Datos ordenados por fecha
+    df_ordenado = df.sort_values("fecha").reset_index(drop=True)
+    
+    # Lista de meses para el selectbox
     meses_nombres = sorted(
         list({m for m in df_ordenado["mes"].unique()} | set(MAPA_MESES.keys())),
         key=lambda m: MAPA_MESES.get(m, 13),
     )
-
+    
     ultimo_anio = int(df_ordenado["anio"].iloc[-1])
     ultimo_mes_nombre = df_ordenado["mes"].iloc[-1]
     idx_mes_default = meses_nombres.index(ultimo_mes_nombre)
-
+    
     col_a, col_b, col_c = st.columns(3)
     with col_a:
         anio_input = st.number_input(
@@ -430,62 +425,60 @@ elif pagina == "Modelo y predicciones":
         mes_inicio = MAPA_MESES[mes_nombre]
     with col_c:
         num_meses = st.slider("Número de meses a predecir", 1, 24, 5)
-
+    
     if st.button("Calcular predicción"):
-        # ----------- ESTA PARTE ES CLAVE: replica tu Colab -----------
-
-        # 1) Último registro de variables explicativas y último TC histórico
+        # Último registro de features y TC
         ultimo_X = df_mod[selected_vars].iloc[-1].copy()
-        ultimo_tc = df_ordenado[tc_col].iloc[-1]
-
-        # 2) Generar lista (anio, mes_num) futuros EXACTO como en Colab
+        ultimo_tc = df_ordenado["TC"].iloc[-1]
+    
+        # Generar lista de (año, mes_num) futuros
         meses_futuro = []
         mes_actual = mes_inicio
         anio_actual = int(anio_input)
-
+    
         for _ in range(num_meses):
             meses_futuro.append((anio_actual, mes_actual))
             mes_actual += 1
             if mes_actual > 12:
                 mes_actual = 1
                 anio_actual += 1
-
-        # DataFrame con años y meses futuros
+    
         df_futuro = pd.DataFrame(meses_futuro, columns=["anio", "mes_num"])
-
-        # 3) Copiar las otras variables de último_X
-        #    (NO pisamos anio ni mes_num, igual que en tu Colab)
+    
+        # Construir features futuras (mantener últimos valores de las demás variables)
         for col in selected_vars:
-            if col in ["anio", "mes_num"]:
-                continue
-            df_futuro[col] = ultimo_X[col]
-
-        # 4) Imputar + escalar + predecir rendimientos
+            if col == "anio":
+                df_futuro[col] = df_futuro["anio"]
+            else:
+                df_futuro[col] = ultimo_X[col]
+    
+        # Imputar + escalar + predecir
         X_fut_imp = imputer.transform(df_futuro[selected_vars])
         X_fut_scaled = scaler.transform(X_fut_imp)
         rendimientos_pred = modelo.predict(X_fut_scaled)
-
-        # 5) Reconstruir el tipo de cambio a partir del último TC real
-        tc_pred = [ultimo_tc * np.exp(rendimientos_pred[0])]
-        for r in rendimientos_pred[1:]:
-            tc_pred.append(tc_pred[-1] * np.exp(r))
-
+    
+        # Reconstrucción del tipo de cambio
+        tc_pred = []
+        tc_actual = ultimo_tc
+        for r in rendimientos_pred:
+            tc_actual = tc_actual * np.exp(r)
+            tc_pred.append(tc_actual)
+    
         df_futuro["TC_predicho"] = tc_pred
-
-        # 6) Mapear mes_num a nombre de mes (igual que en Colab)
+    
+        # Mapear número de mes a nombre
         mes_dict_inv = {v: k for k, v in MAPA_MESES.items()}
         df_futuro["mes"] = df_futuro["mes_num"].map(mes_dict_inv)
-
-        # 7) Mostrar tabla de predicciones
+    
+        # Mostrar tabla de predicciones
         st.write("### Predicciones futuras")
         st.dataframe(df_futuro[["anio", "mes", "TC_predicho"]])
-
-        # 8) Gráfico histórico + predicciones (idéntico enfoque al Colab)
+    
+        # Gráfico histórico + predicho
         fig, ax = plt.subplots(figsize=(10, 4))
-
         x_hist = np.arange(len(df_ordenado))
-        ax.plot(x_hist, df_ordenado[tc_col], label="TC real (histórico)")
-
+        ax.plot(x_hist, df_ordenado["TC"], label="TC real (histórico)")
+    
         x_fut = np.arange(len(df_ordenado), len(df_ordenado) + num_meses)
         ax.plot(
             x_fut,
@@ -494,7 +487,7 @@ elif pagina == "Modelo y predicciones":
             marker="o",
             color="red",
         )
-
+    
         ax.set_title(
             f"Predicción del Tipo de Cambio - {num_meses} meses desde {mes_nombre}/{int(anio_input)}"
         )

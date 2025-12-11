@@ -6,8 +6,6 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import StandardScaler
 
 sns.set(style="whitegrid")
 

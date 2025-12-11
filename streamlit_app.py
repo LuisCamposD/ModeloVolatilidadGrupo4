@@ -112,27 +112,77 @@ MAPA_MESES = {
 # ---------- 1. Cargar modelo, variables, datos y reentrenar imputer/scaler ----------
 @st.cache_resource
 def cargar_recursos():
-    # 1) Cargamos todo lo entrenado en Colab
+    # Cargar artefactos entrenados en Colab (solo modelo y variables)
     modelo = joblib.load("gbr_mejor_modelo_tc.pkl")
     selected_vars = joblib.load("selected_vars_volatilidad.pkl")
-    imputer = joblib.load("imputer_volatilidad.pkl")
-    scaler = joblib.load("scaler_volatilidad.pkl")
 
-    # 2) Cargamos el CSV
+    # CSV real del repo
     df = pd.read_csv("datos_tc_limpios.csv")
 
-    # 3) Detectamos columna TC (tc_col) como ya lo tenías
-    ...
-    # 4) Creamos fecha, ordenamos, etc.
-    ...
-    # 5) Creamos df_mod y Rendimientos_log
+    # ========== 1) Detectar columna de tipo de cambio (tc_col) ==========
+    posibles_tc = [
+        "TC",
+        "tc",
+        "TC_venta",
+        "tc_venta",
+        "Tipo de cambio - TC Sistema bancario SBS (S/ por US$) - Venta",
+        "Tipo de cambio - TC Sistema bancario SBS (S/ por US$) - Venta ",
+        "Tipo_de_cambio",
+    ]
+
+    tc_col = None
+    for col in posibles_tc:
+        if col in df.columns:
+            tc_col = col
+            break
+
+    if tc_col is None:
+        for col in df.columns:
+            nombre = col.lower()
+            if "tipo de cambio" in nombre or nombre == "tc":
+                tc_col = col
+                break
+
+    if tc_col is None:
+        raise KeyError(
+            f"No se encontró columna de Tipo de Cambio en el CSV. "
+            f"Columnas disponibles: {list(df.columns)}"
+        )
+
+    # ========== 2) Fecha y ordenamiento ==========
+    if "fecha" not in df.columns:
+        if "anio" in df.columns and "mes" in df.columns:
+            df["mes_num"] = df["mes"].map(MAPA_MESES)
+            df["fecha"] = pd.to_datetime(
+                dict(year=df["anio"], month=df["mes_num"], day=1)
+            )
+        else:
+            df["fecha"] = pd.date_range(start="2000-01-01", periods=len(df), freq="M")
+    else:
+        df["fecha"] = pd.to_datetime(df["fecha"])
+
+    if "mes_num" not in df.columns and "mes" in df.columns:
+        df["mes_num"] = df["mes"].map(MAPA_MESES)
+
+    df = df.sort_values("fecha").reset_index(drop=True)
+
+    # ========== 3) Rendimientos logarítmicos ==========
     df_mod = df.copy()
-    df_mod["Rendimientos_log"] = np.log(df_mod[tc_col] / df_mod[tc_col].shift(1))
+    df_mod["Rendimientos_log"] = np.log(
+        df_mod[tc_col] / df_mod[tc_col].shift(1)
+    )
     df_mod = df_mod.dropna(subset=["Rendimientos_log"])
 
-    # 6) Devolvemos
-    return modelo, imputer, scaler, selected_vars, df, df_mod, tc_col
+    # ========== 4) Reentrenar imputer y scaler con las variables seleccionadas ==========
+    X_full = df_mod[selected_vars].copy()
 
+    imputer = SimpleImputer(strategy="median")
+    X_imp = imputer.fit_transform(X_full)
+
+    scaler = StandardScaler()
+    scaler.fit(X_imp)
+
+    return modelo, imputer, scaler, selected_vars, df, df_mod, tc_col
 
 
 st.write("🔄 Inicializando app y cargando recursos...")
